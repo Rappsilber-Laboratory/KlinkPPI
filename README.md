@@ -87,10 +87,28 @@ Then open:
 http://localhost:5174
 ```
 
+The default frontend port is `5174`. If that port is already in use, pass a different port from the project root:
+
+```bash
+npm run dev -- --port 5175
+```
+
+If the app needs to be reachable from another machine on the network, also expose the Vite host:
+
+```bash
+npm run dev -- --host 0.0.0.0 --port 5175
+```
+
+To run only the frontend from the project root, use npm's `--prefix` option:
+
+```bash
+npm --prefix frontend run dev -- --port 5175
+```
+
 ## Notes
 
 - The frontend is configured to connect with to the backend at `http://127.0.0.1:8000`.
-- The backend CORS configuration currently allows `http://localhost:5174`.
+- The backend CORS configuration allows `localhost` and `127.0.0.1` development origins on any port.
 - Several backend resolvers call external services such as UniProt, Ensembl, STRING, and IntAct, so an internet connection is required for full functionality.
 - If `npm run dev` or `npm run build` fails after switching Node versions, remove stale dependencies and reinstall with `npm install`.
 - MITAB exports use shared core columns for all selected databases. The `Source database(s)` field uses verified PSI-MI source terms where available: `psi-mi:"MI:1014"(string)`, `psi-mi:"MI:0463"(biogrid)`, and `psi-mi:"MI:0469"(intact)`. Sources without verified PSI-MI database terms are exported as `corum`, `huri`, and `predictomes`.
