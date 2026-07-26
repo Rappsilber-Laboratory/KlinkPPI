@@ -11,6 +11,7 @@ const pythonCommand = process.platform === 'win32'
 const backendDir = join(rootDir, 'backend');
 const frontendDir = join(rootDir, 'frontend');
 const viteCli = join(frontendDir, 'node_modules', 'vite', 'bin', 'vite.js');
+const frontendArgs = process.argv.slice(2);
 
 if (!existsSync(pythonCommand)) {
   console.error('Backend virtual environment is missing. Run `npm install` or `npm run setup` first.');
@@ -122,6 +123,7 @@ async function main() {
       viteCli,
       '--host',
       '127.0.0.1',
+      ...frontendArgs,
     ], frontendDir);
   }
 }
