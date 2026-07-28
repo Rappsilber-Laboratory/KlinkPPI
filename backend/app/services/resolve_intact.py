@@ -33,6 +33,28 @@ def taxon_id_to_name(tax_id: str):
         return str(tax_id)
 
 
+def _extract_gene_name(aliases) -> str | None:
+    for alias in aliases or []:
+        if not isinstance(alias, str) or "(gene name)" not in alias:
+            continue
+        gene_name = alias.split(" (", 1)[0].strip()
+        if gene_name:
+            return gene_name
+    return None
+
+
+def _build_participant(data: dict, suffix: str, fallback_tax_id: str) -> dict | None:
+    identifier = data.get(f"uniqueId{suffix}")
+    if not identifier:
+        return None
+
+    return {
+        "id": identifier,
+        "gene_name": _extract_gene_name(data.get(f"aliases{suffix}")),
+        "tax_id": str(data.get(f"taxId{suffix}") or fallback_tax_id),
+    }
+
+
 def resolve_intact(input_id: str, tax_id: str):
     try:
         result_conversion_json = _request_json(
@@ -87,29 +109,14 @@ def resolve_intact(input_id: str, tax_id: str):
     except (requests.RequestException, ValueError, TypeError) as exc:
         return _error_response(f"IntAct request failed: {exc}")
 
-    all_interactions_refined = []
-    for data in all_interactions:
-        if data.get("uniqueIdA") == data.get("uniqueIdB"):
-            continue
-        all_interactions_refined.append(data)
-
-    all_interactions_more_refined = []
-    for data in all_interactions_refined:
-        unique_id_a = data.get("uniqueIdA")
-        unique_id_b = data.get("uniqueIdB")
-        if unique_id_a and unique_id_b and unique_id_b < unique_id_a:
-            data["uniqueIdA"] = unique_id_b
-            data["uniqueIdB"] = unique_id_a
-        all_interactions_more_refined.append(data)
-
     raw_response_data = {}
-    for data in all_interactions_more_refined:
-        unique_id_a = data.get("uniqueIdA")
-        unique_id_b = data.get("uniqueIdB")
-        if not unique_id_a or not unique_id_b:
+    for data in all_interactions:
+        participant_a = _build_participant(data, "A", tax_id)
+        participant_b = _build_participant(data, "B", tax_id)
+        if not participant_a or not participant_b or participant_a["id"] == participant_b["id"]:
             continue
 
-        key = (unique_id_a, unique_id_b)
+        key = tuple(sorted((participant_a["id"], participant_b["id"])))
         if key not in raw_response_data:
             confidence_values = data.get("confidenceValues") or [""]
             raw_response_data[key] = {
@@ -118,11 +125,16 @@ def resolve_intact(input_id: str, tax_id: str):
                 "publication_id": set(),
                 "feature_count": [],
                 "confidence_value": confidence_values[0],
-                "moleculeA": data.get("moleculeA", "-"),
-                "TaxIdA": data.get("taxIdA", tax_id),
-                "moleculeB": data.get("moleculeB", "-"),
-                "TaxIdB": data.get("taxIdB", tax_id),
+                "participants": {
+                    participant_a["id"]: participant_a,
+                    participant_b["id"]: participant_b,
+                },
             }
+        else:
+            for participant in (participant_a, participant_b):
+                existing_participant = raw_response_data[key]["participants"][participant["id"]]
+                if not existing_participant["gene_name"] and participant["gene_name"]:
+                    existing_participant["gene_name"] = participant["gene_name"]
 
         raw_response_data[key]["num_interactions"] += 1
         if data.get("detectionMethod"):
@@ -151,39 +163,29 @@ def resolve_intact(input_id: str, tax_id: str):
         feature_counts = record["feature_count"] or [0]
 
         if key[0] == input_id:
-            interactors.append(
-                {
-                    "Interactor_A": key[1],
-                    "Interactor_B": key[0],
-                    "Interactor_Gene_Name": record["moleculeB"],
-                    "organism": taxon_id_to_name(str(record["TaxIdB"])),
-                    "organism_tax_id": str(record["TaxIdB"]),
-                    "Num_Interaction_IntAct": record["num_interactions"],
-                    "Minimum_feature_count": min(feature_counts),
-                    "Maximum_feature_count": max(feature_counts),
-                    "Interaction_Score_Intact": score,
-                    "Unique_Identification_Methods": sorted(record["identification_method"]),
-                    "PubMed_Ids": sorted(record["publication_id"]),
-                    "Interactor_Link": f"https://www.ebi.ac.uk/intact/search?query={key[1]}",
-                }
-            )
-        if key[1] == input_id:
-            interactors.append(
-                {
-                    "Interactor_A": key[0],
-                    "Interactor_B": key[1],
-                    "Interactor_Gene_Name": record["moleculeA"],
-                    "organism": taxon_id_to_name(str(record["TaxIdA"])),
-                    "organism_tax_id": str(record["TaxIdA"]),
-                    "Num_Interaction_IntAct": record["num_interactions"],
-                    "Minimum_feature_count": min(feature_counts),
-                    "Maximum_feature_count": max(feature_counts),
-                    "Interaction_Score_Intact": score,
-                    "Unique_Identification_Methods": sorted(record["identification_method"]),
-                    "PubMed_Ids": sorted(record["publication_id"]),
-                    "Interactor_Link": f"https://www.ebi.ac.uk/intact/search?query={key[0]}",
-                }
-            )
+            partner_id = key[1]
+        elif key[1] == input_id:
+            partner_id = key[0]
+        else:
+            continue
+
+        partner = record["participants"][partner_id]
+        interactors.append(
+            {
+                "Interactor_A": partner_id,
+                "Interactor_B": input_id,
+                "Interactor_Gene_Name": partner["gene_name"],
+                "organism": taxon_id_to_name(partner["tax_id"]),
+                "organism_tax_id": partner["tax_id"],
+                "Num_Interaction_IntAct": record["num_interactions"],
+                "Minimum_feature_count": min(feature_counts),
+                "Maximum_feature_count": max(feature_counts),
+                "Interaction_Score_Intact": score,
+                "Unique_Identification_Methods": sorted(record["identification_method"]),
+                "PubMed_Ids": sorted(record["publication_id"]),
+                "Interactor_Link": f"https://www.ebi.ac.uk/intact/search?query={quote(partner_id, safe='')}",
+            }
+        )
 
     interactions.append({"Interactions": interactors})
     return interactions
