@@ -107,7 +107,9 @@ npm --prefix frontend run dev -- --port 5175
 
 ## Notes
 
-- The frontend is configured to connect with to the backend at `http://127.0.0.1:8000`.
+- The frontend is configured to connect with to the backend at `http://127.0.0.1:8000`. To change the backend port modify scripts/dev.mjs function main '--port', '8000' to '--port', 'xyz' and function waitForBackend const healthUrl = 'http://127.0.0.1:xyz/health'; where xyz is the new port (e.g. 8080)
+- to accept connections from anything but localhost the frontend need to listen to 0.0.0.0 (scripts/dev.mjs function main change '--hist', '127.0.0.1', ...frontendArgs to '--hist', '0.0.0.0', ...frontendArgs) and the host names under which the script should be reachable needs to be registered (vite.config.js add allowedHosts: ["hostname1", "hostname2"] to plugins.server
+
 - The backend CORS configuration allows `localhost` and `127.0.0.1` development origins on any port.
 - Several backend resolvers call external services such as UniProt, Ensembl, STRING, and IntAct, so an internet connection is required for full functionality.
 - If `npm run dev` or `npm run build` fails after switching Node versions, remove stale dependencies and reinstall with `npm install`.
