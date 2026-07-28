@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote
 
 import requests
 
@@ -20,6 +21,9 @@ def taxon_id_to_name(tax_id: str) -> str:
 
 
 def resolve_biogrid(input_id: str, tax_id: str):
+    source_interactions = get_biogrid_interactions(input_id)
+    database_link = f"https://thebiogrid.org/search.php?search={quote(input_id, safe='')}"
+
     interactions = []
     interactions.append(
         {
@@ -27,12 +31,13 @@ def resolve_biogrid(input_id: str, tax_id: str):
                 "database": "BioGrid",
                 "Input_UniProt": input_id,
                 "organism": taxon_id_to_name(tax_id),
+                "Database_Link": database_link,
             }
         }
     )
 
     interactors = []
-    for interactor in get_biogrid_interactions(input_id):
+    for interactor in source_interactions:
         interactors.append(
             {
                 "Interactor_A": interactor["Interactor_A"],

@@ -12,6 +12,7 @@ const scoreInfo = [
 ]
 
 const StringResults = ({ data }) => {
+    const info = data.String[0].info
     const DirectInteractions = data.String[1].Direct_Interactions
     const IndirectInteractions = data.String[2].Indirect_Interactions
     const [showIndirect, setshowIndirect] = useState(false)
@@ -187,7 +188,19 @@ const StringResults = ({ data }) => {
             {/* Header */}
             <div className="bg-sky-700 px-6 py-4 flex justify-between items-center">
                 <div>
-                    <h2 className="text-white text-xl font-bold">STRING</h2>
+                    <h2 className="text-white text-xl font-bold">
+                        {info.Database_Link ? (
+                            <a
+                                href={info.Database_Link}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 hover:underline focus:outline-none focus:ring-2 focus:ring-white/80"
+                                aria-label="Open STRING for the searched protein"
+                            >
+                                STRING <span aria-hidden="true">↗</span>
+                            </a>
+                        ) : 'STRING'}
+                    </h2>
                     <p className="text-white/80 text-sm">Functional protein interaction network</p>
                 </div>
                 <span className="bg-white text-sky-700 text-xs font-bold px-3 py-1 ">

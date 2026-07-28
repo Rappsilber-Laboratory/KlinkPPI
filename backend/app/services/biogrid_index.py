@@ -9,7 +9,7 @@ import threading
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BIOGRID_SOURCE_PATH = PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.mitab.txt"
 BIOGRID_INDEX_PATH = PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.sqlite3"
-BIOGRID_INDEX_SCHEMA_VERSION = "2"
+BIOGRID_INDEX_SCHEMA_VERSION = "3"
 
 _INDEX_BUILD_LOCK = threading.Lock()
 
@@ -45,16 +45,23 @@ def _extract_confidence_score(raw_value: str) -> str:
     return raw_value
 
 
-def _extract_gene_name(raw_value: str) -> str:
-    for alias in (raw_value or "").split("|"):
-        if ":" not in alias:
+def _extract_gene_name(alt_ids: str, aliases: str) -> str:
+    for alt_id in (alt_ids or "").split("|"):
+        if not alt_id.startswith("entrez gene/locuslink:"):
             continue
-        value = alias.split(":", 1)[1]
-        if "(" in value:
-            value = value.split("(", 1)[0]
-        value = value.strip()
-        if value:
-            return value
+
+        gene_name = alt_id.split(":", 1)[1].strip()
+        if gene_name and not gene_name.isdigit():
+            return gene_name
+
+    for alias in (aliases or "").split("|"):
+        if ":" not in alias or "(gene name)" not in alias:
+            continue
+
+        gene_name = alias.split(":", 1)[1].split("(", 1)[0].strip()
+        if gene_name:
+            return gene_name
+
     return ""
 
 
@@ -174,8 +181,12 @@ def build_biogrid_index() -> None:
                 )
                 interaction_type = _extract_interaction_type(row["Interaction Types"])
                 confidence_score = _extract_confidence_score(row["Confidence Values"])
-                gene_name_a = _extract_gene_name(row["Aliases Interactor A"])
-                gene_name_b = _extract_gene_name(row["Aliases Interactor B"])
+                gene_name_a = _extract_gene_name(
+                    row["Alt IDs Interactor A"], row["Aliases Interactor A"]
+                )
+                gene_name_b = _extract_gene_name(
+                    row["Alt IDs Interactor B"], row["Aliases Interactor B"]
+                )
 
                 batch.append(
                     (

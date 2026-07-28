@@ -34,13 +34,16 @@ def taxon_id_to_name(tax_id: str):
 @lru_cache(maxsize=4096)
 def _string_link(species: str, identifier: str):
     try:
-        return _request_json(
+        result = _request_json(
             "POST",
             f"{URL}/{OUTPUT_FORMAT}/{METHOD3}",
             data={"species": species, "identifiers": identifier},
         )
+        if isinstance(result, list) and result and isinstance(result[0], str):
+            return result[0]
+        return result if isinstance(result, str) else None
     except (requests.RequestException, ValueError):
-        return []
+        return None
 
 
 def get_string_interactions(input_id: str, tax_id: str):
@@ -55,6 +58,7 @@ def get_string_interactions(input_id: str, tax_id: str):
             return _error_response("Protein not found in STRING")
 
         string_id = result_conversion_json[0]["stringId"]
+        database_link = _string_link(tax_id, string_id)
 
         result_interactions_json = _request_json(
             "POST",
@@ -67,7 +71,14 @@ def get_string_interactions(input_id: str, tax_id: str):
     interactions = []
 
     interactions.append(
-        {"info": {"database": "STRING", "Input_UniProt": input_id, "organism": taxon_id_to_name(tax_id)}}
+        {
+            "info": {
+                "database": "STRING",
+                "Input_UniProt": input_id,
+                "organism": taxon_id_to_name(tax_id),
+                "Database_Link": database_link,
+            }
+        }
     )
 
     direct_interactors = []

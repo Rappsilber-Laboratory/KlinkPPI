@@ -88,52 +88,69 @@ function App() {
     const huriStatus = getDBStatus(huriData, 'HuRI', 'Interactors')
 
     return (
-        <>
+        <div className="min-h-screen flex flex-col">
             <Navbar />
-            <OrganismCoveragePlots />
-            <SearchSection setresults={setresults} />
+            <main className="flex-1">
+                <OrganismCoveragePlots />
+                <SearchSection setresults={setresults} />
 
-            {results && (
+                {results && (
                     <div className="w-full max-w-[110rem] mx-auto px-4 py-10 sm:px-6">
+                        <InteractionOverlapLog results={results} />
 
-                    <InteractionOverlapLog results={results} />
+                        <InputSummary input={results[0].Input} />
 
-                    <InputSummary input={results[0].Input} />
+                        <DownloadPanel
+                            results={results}
+                            uniprot_id={results[0].Input.UniProtId}
+                            tax_id={results[0].Input.TaxonomyId}
+                        />
 
-                    <DownloadPanel
-                        results={results}
-                        uniprot_id={results[0].Input.UniProtId}
-                        tax_id={results[0].Input.TaxonomyId}
-                    />
-
-                    {stringData && (stringStatus === 'valid'
-                        ? <StringResults data={stringData} />
-                        : <NoResults dbName="STRING" reason={stringStatus} />)}     
+                        {stringData && (stringStatus === 'valid'
+                            ? <StringResults data={stringData} />
+                            : <NoResults dbName="STRING" reason={stringStatus} />)}     
 
 
-                    {biogridData && (biogridStatus === 'valid'
-                        ? <BioGridResults data={biogridData} />
-                        : <NoResults dbName="BioGRID" reason={biogridStatus} />)}
+                        {biogridData && (biogridStatus === 'valid'
+                            ? <BioGridResults data={biogridData} />
+                            : <NoResults dbName="BioGRID" reason={biogridStatus} />)}
 
-                    {intactData && (intactStatus === 'valid'
-                        ? <IntactResults data={intactData} />
-                        : <NoResults dbName="IntAct" reason={intactStatus} />)}
+                        {intactData && (intactStatus === 'valid'
+                            ? <IntactResults data={intactData} />
+                            : <NoResults dbName="IntAct" reason={intactStatus} />)}
 
-                    {predictomesData && (predictomesStatus === 'valid'
-                        ? <PredictomesResults data={predictomesData} />
-                        : <NoResults dbName="Predictomes" reason={predictomesStatus} />)}
+                        {predictomesData && (predictomesStatus === 'valid'
+                            ? <PredictomesResults data={predictomesData} />
+                            : <NoResults dbName="Predictomes" reason={predictomesStatus} />)}
 
-                    {corumData && (corumStatus === 'valid'
-                        ? <CorumResults data={corumData} />
-                        : <NoResults dbName="CORUM" reason={corumStatus} />)}
+                        {corumData && (corumStatus === 'valid'
+                            ? <CorumResults data={corumData} />
+                            : <NoResults dbName="CORUM" reason={corumStatus} />)}
 
-                    {huriData && (huriStatus === 'valid'
-                        ? <HuRiResults data={huriData} />
-                        : <NoResults dbName="HuRI" reason={huriStatus} />)}
+                        {huriData && (huriStatus === 'valid'
+                            ? <HuRiResults data={huriData} />
+                            : <NoResults dbName="HuRI" reason={huriStatus} />)}
+                    </div>
+                )}
+            </main>
 
+            <footer className="border-t border-slate-300 bg-slate-100 px-4 py-6 text-sm text-slate-700 sm:px-6">
+                <div className="mx-auto flex w-full max-w-[110rem] flex-col gap-2">
+                    <p className="font-medium text-slate-900">Free access statement</p>
+                    <p>
+                        KlinkPPI is provided as a free-access resource. Lab information:{' '}
+                        <a
+                            href="https://www.rappsilberlab.org/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-medium text-slate-900 underline decoration-slate-400 underline-offset-2 hover:decoration-slate-900"
+                        >
+                            Rappsilber Lab
+                        </a>
+                    </p>
                 </div>
-            )}
-        </>
+            </footer>
+        </div>
     )
 }
 
