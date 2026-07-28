@@ -103,7 +103,7 @@ def resolve_intact(input_id: str, tax_id: str):
             result_interactions = _request_json(
                 "GET",
                 f"{URL}/{METHOD3}/{intact_id}",
-                params={"page": page, "size": PAGE_SIZE, "sort": []},
+                params={"page": page, "pageSize": PAGE_SIZE, "sort": []},
             )
             all_interactions.extend(result_interactions.get("content", []))
     except (requests.RequestException, ValueError, TypeError) as exc:
