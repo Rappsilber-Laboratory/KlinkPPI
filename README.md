@@ -112,6 +112,8 @@ npm --prefix frontend run dev -- --port 5175
 - Several backend resolvers call external services such as UniProt, Ensembl, STRING, and IntAct, so an internet connection is required for full functionality.
 - If `npm run dev` or `npm run build` fails after switching Node versions, remove stale dependencies and reinstall with `npm install`.
 - MITAB exports use shared core columns for all selected databases. The `Source database(s)` field uses verified PSI-MI source terms where available: `psi-mi:"MI:1014"(string)`, `psi-mi:"MI:0463"(biogrid)`, and `psi-mi:"MI:0469"(intact)`. Sources without verified PSI-MI database terms are exported as `corum`, `huri`, and `predictomes`.
+- In case HuRI is used from the source, then run the preprocessing for ID mapping:  
+  `python KlinkPPI/scripts/preprocess_huri_uniprot.py`
 
 ## Download Columns
 
