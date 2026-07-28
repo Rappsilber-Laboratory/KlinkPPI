@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 
 from app.services.species_index import get_species_by_tax_id
+from app.services.uniprot_lookup import get_uniprot_gene_names
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -167,6 +168,23 @@ def resolve_HuRI(input_id: str | None, tax_id: str, uniprot_id: str | None = Non
             continue
         seen.add(key)
         interactors.append(interaction)
+
+    gene_names = get_uniprot_gene_names(
+        [
+            uniprot_id
+            for interaction in interactors
+            for uniprot_id in (
+                interaction.get("Interactor_A_UniProt"),
+                interaction.get("Interactor_B_UniProt"),
+            )
+        ]
+    )
+    for interaction in interactors:
+        interactor_a_gene_name = gene_names.get(interaction.get("Interactor_A_UniProt"))
+        interactor_b_gene_name = gene_names.get(interaction.get("Interactor_B_UniProt"))
+        interaction["Interactor_Gene_Name"] = interactor_a_gene_name
+        interaction["Interactor_Gene_Name_A"] = interactor_a_gene_name
+        interaction["Interactor_Gene_Name_B"] = interactor_b_gene_name
 
     interactions.append({"Interactors": interactors})
     return interactions

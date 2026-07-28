@@ -1,6 +1,8 @@
 COMMON_COLUMNS = [
     "#ID(s) interactor A",
     "ID(s) interactor B",
+    "Alias(es) interactor A",
+    "Alias(es) interactor B",
     "Taxid interactor A",
     "Taxid interactor B",
     "Interaction detection method(s)",
@@ -109,6 +111,10 @@ def _join(values) -> str:
     return "|".join(cleaned) if cleaned else "-"
 
 
+def _gene_alias(gene_name) -> str:
+    return f"hgnc.symbol:{gene_name}" if _has_value(gene_name) else "-"
+
+
 def _score_values(interaction: dict, selected_columns: list, fields: list[tuple[str, str]]) -> str:
     values = []
     for field, label in fields:
@@ -155,6 +161,8 @@ def populate_string(data: list, final_columns: list, selected_columns: list, uni
             row = _base_row(final_columns, tax_id, interaction.get("organism_tax_id"), interaction.get("organism_tax_id"))
             row["#ID(s) interactor A"] = f"hgnc.symbol:{interaction.get('Interactor_A', '-')}"
             row["ID(s) interactor B"] = f"hgnc.symbol:{interaction.get('Interactor_B', '-')}"
+            row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_A"))
+            row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_B"))
             row["Interaction type(s)"] = "string-functional-association"
             row["Source database(s)"] = 'psi-mi:"MI:1014"(string)'
             row["Confidence value(s)"] = _score_values(interaction, selected_columns, STRING_SCORE_FIELDS)
@@ -168,6 +176,7 @@ def populate_predictomes(data: list, final_columns: list, selected_columns: list
         row = _base_row(final_columns, tax_id)
         row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
         row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name"))
         row["Interaction type(s)"] = "predictomes-structural-prediction"
         row["Source database(s)"] = "predictomes"
         row["Confidence value(s)"] = _score_values(interaction, selected_columns, PREDICTOMES_SCORE_FIELDS)
@@ -181,6 +190,7 @@ def populate_intact(data: list, final_columns: list, selected_columns: list, uni
         row = _base_row(final_columns, tax_id, interaction.get("organism_tax_id"), tax_id)
         row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
         row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name"))
         row["Source database(s)"] = 'psi-mi:"MI:0469"(intact)'
 
         if "Unique_Identification_Methods" in selected_columns:
@@ -212,6 +222,8 @@ def populate_huri(data: list, final_columns: list, selected_columns: list, unipr
             if interactor_b_uniprot
             else f"ensembl:{interactor_b_ensembl or interaction.get('Interactor_B', '-')}"
         )
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name_A") or interaction.get("Interactor_Gene_Name"))
+        row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
         row["Interaction type(s)"] = 'psi-mi:"MI:0407"(direct interaction)'
         row["Source database(s)"] = "huri"
         rows.append(row)
@@ -224,6 +236,7 @@ def populate_biogrid(data: list, final_columns: list, selected_columns: list, un
         row = _base_row(final_columns, tax_id, interaction.get("organism_tax_id"), tax_id)
         row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
         row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name"))
         row["Source database(s)"] = 'psi-mi:"MI:0463"(biogrid)'
 
         if "Interaction_Detection_Method" in selected_columns:
@@ -243,6 +256,7 @@ def populate_corum(data: list, final_columns: list, selected_columns: list, unip
         row = _base_row(final_columns, tax_id)
         row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
         row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name"))
         row["Interaction type(s)"] = "corum-complex-co-membership"
         row["Source database(s)"] = "corum"
 

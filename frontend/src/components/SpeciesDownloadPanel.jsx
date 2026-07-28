@@ -40,6 +40,8 @@ const DB_OPTIONAL_COLUMNS = {
 const DEFAULT_COLUMNS = [
   '#ID(s) interactor A',
   'ID(s) interactor B',
+  'Alias(es) interactor A',
+  'Alias(es) interactor B',
   'Taxid interactor A',
   'Taxid interactor B',
   'Interaction detection method(s)',
