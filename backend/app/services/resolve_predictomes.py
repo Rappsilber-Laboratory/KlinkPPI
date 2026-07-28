@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from urllib.parse import quote
 
 import pandas as pd
 
@@ -51,7 +52,16 @@ for row in PREDICTOMES_DF.itertuples(index=False):
 
 
 def resolve_predictomes(input_id: str, tax_id: str):
-    interactions = [{"info": {"database": "Predictomes", "Input_UniProt": input_id, "organism": "Human"}}]
+    interactions = [
+        {
+            "info": {
+                "database": "Predictomes",
+                "Input_UniProt": input_id,
+                "organism": "Human",
+                "Database_Link": f"https://predictomes.org/hp/?pid={quote(input_id, safe='')}",
+            }
+        }
+    ]
 
     interactors_list = sorted(
         [item for item in PREDICTOMES_INDEX.get(input_id, []) if item["spoc_score"] > 0.0],

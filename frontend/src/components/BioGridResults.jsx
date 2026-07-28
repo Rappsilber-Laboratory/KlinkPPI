@@ -2,6 +2,7 @@ import DBHeader from './DBHeader'
 import DBTable from './DBTable'
 
 const BioGridResults = ({ data }) => {
+    const info = data.BioGrid[0].info
     const Interactions = data.BioGrid[1].Interactors
 
     const headers = [
@@ -32,7 +33,7 @@ const BioGridResults = ({ data }) => {
 
     return (
         <div className="bg-white rounded-2xl shadow-md mb-8 overflow-hidden">
-            <DBHeader name="BioGRID" subtitle="Biological general repository for interaction datasets" count={Interactions.length} color="bg-emerald-700" />
+            <DBHeader name="BioGRID" subtitle="Biological general repository for interaction datasets" count={Interactions.length} color="bg-emerald-700" databaseLink={info.Database_Link} />
             <div className="p-6">
     {Interactions.length > 0 ? (
         <DBTable headers={headers} rows={rows} />

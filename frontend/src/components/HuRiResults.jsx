@@ -2,6 +2,7 @@ import DBHeader from './DBHeader'
 import DBTable from './DBTable'
 
 const HuRiResults = ({ data }) => {
+    const info = data.HuRI[0].info
     const Interactions = data.HuRI[1].Interactors
 
     const headers = [
@@ -22,7 +23,7 @@ const HuRiResults = ({ data }) => {
 
     return (
         <div className="bg-white  shadow-md mb-8 overflow-hidden">
-            <DBHeader name="HuRI" subtitle="Human Reference Interactome — systematic Y2H screen" count={Interactions.length} color="bg-rose-700" />
+            <DBHeader name="HuRI" subtitle="Human Reference Interactome — systematic Y2H screen" count={Interactions.length} color="bg-rose-700" databaseLink={info.Database_Link} />
             <div className="p-6">
     {Interactions.length > 0 ? (
         <DBTable headers={headers} rows={rows} />

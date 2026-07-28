@@ -6,7 +6,7 @@ const Navbar = () => {
       <div className="mx-auto flex w-full max-w-[110rem] items-center justify-center">
         <div className="px-2 text-center">
           <h1 className="text-xl font-bold italic leading-tight text-slate-900 sm:text-2xl lg:text-3xl">
-            KlinkPPI: Source-Aware Search and Export of Protein-Protein Interaction Evidence Across Databases
+            KlinkPPI: Single Point of Access to Protein-Protein Interactions Across Databases
           </h1>
         </div>
       </div>

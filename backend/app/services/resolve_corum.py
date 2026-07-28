@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+from urllib.parse import quote
 
 
 CORUM_MAPPING_DF = pd.read_csv("../Data/Corum/corum_uniprotCorumMapping.txt", sep="\t")
@@ -51,6 +52,7 @@ def resolve_corum(input_id: str, tax_id: str):
                 "database": "CORUM",
                 "Input_UniProt": input_id,
                 "organism": _clean_value(complex_row["organism"]),
+                "Database_Link": f"https://mips.helmholtz-muenchen.de/corum/?query={quote(input_id, safe='')}",
                 "complex_name": _clean_value(complex_row["complex_name"]),
                 "cell_line": _clean_value(complex_row["cell_line"]),
                 "Purification_Method": purification_methods_name,

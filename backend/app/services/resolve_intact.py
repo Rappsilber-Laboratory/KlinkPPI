@@ -1,5 +1,6 @@
 from functools import lru_cache
 import math
+from urllib.parse import quote
 
 import requests
 
@@ -132,7 +133,16 @@ def resolve_intact(input_id: str, tax_id: str):
             raw_response_data[key]["feature_count"].append(data["featureCount"])
 
     interactions = []
-    interactions.append({"info": {"database": "IntAct", "Input_Uniprot": input_id, "organism": taxon_id_to_name(tax_id)}})
+    interactions.append(
+        {
+            "info": {
+                "database": "IntAct",
+                "Input_Uniprot": input_id,
+                "organism": taxon_id_to_name(tax_id),
+                "Database_Link": f"https://www.ebi.ac.uk/intact/search?query={quote(input_id, safe='')}",
+            }
+        }
+    )
     interactors = []
 
     for key, record in raw_response_data.items():

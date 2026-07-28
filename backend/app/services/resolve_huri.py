@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote
 
 import pandas as pd
 import requests
@@ -121,13 +122,25 @@ def _format_interaction(record: dict, query_id: str) -> dict:
 
 
 def resolve_HuRI(input_id: str | None, tax_id: str, uniprot_id: str | None = None):
+    database_query_id = input_id
+    if not database_query_id and uniprot_id:
+        mapped_records = HURI_UNIPROT_INDEX.get(uniprot_id, [])
+        if mapped_records:
+            first_record = mapped_records[0]
+            database_query_id = (
+                first_record["Interactor_A_Ensembl"]
+                if first_record["query_side"] == "A"
+                else first_record["Interactor_B_Ensembl"]
+            )
+
     interactions = [
         {
             "info": {
                 "database": "HuRI",
                 "Input_UniProt": uniprot_id,
-                "Input_Ensembl": input_id,
+                "Input_Ensembl": database_query_id,
                 "organism": taxon_id_to_name(tax_id),
+                "Database_Link": f"https://interactome-atlas.org/search/{quote(database_query_id or uniprot_id or '', safe='')}",
             }
         }
     ]

@@ -2,6 +2,7 @@ import DBHeader from './DBHeader'
 import DBTable from './DBTable'
 
 const PredictomesResults = ({ data }) => {
+    const info = data.Predictomes[0].info
     const Interactions = data.Predictomes[1].Interactors
 
     const headers = [
@@ -32,7 +33,7 @@ const PredictomesResults = ({ data }) => {
 
     return (
         <div className="bg-white  shadow-md mb-8 overflow-hidden">
-            <DBHeader name="Predictomes" subtitle="Structural proteome-wide interaction predictions" count={Interactions.length} color="bg-indigo-700" />
+            <DBHeader name="Predictomes" subtitle="Structural proteome-wide interaction predictions" count={Interactions.length} color="bg-indigo-700" databaseLink={info.Database_Link} />
             <div className="p-6">
     {Interactions.length > 0 ? (
         <DBTable headers={headers} rows={rows} />

@@ -61,7 +61,7 @@ const buildOverlapEntries = (results) => {
         overlapMap.set(key, {
           geneNames: new Set(),
           ids: new Set(),
-          databases: new Set(),
+          databases: new Map(),
         })
       }
 
@@ -72,18 +72,27 @@ const buildOverlapEntries = (results) => {
       if (interactorId) {
         aggregate.ids.add(interactorId)
       }
-      aggregate.databases.add(dbName)
+      const existingDatabase = aggregate.databases.get(dbName)
+      const interactionLink = entry.Interactor_Link || null
+      if (!existingDatabase || (!existingDatabase.interactionLink && interactionLink)) {
+        aggregate.databases.set(dbName, { name: dbName, interactionLink })
+      }
     }
   }
 
   const overlapEntries = Array.from(overlapMap.values())
     .filter(item => item.databases.size >= 1)
-    .map(item => ({
-      geneName: Array.from(item.geneNames)[0] || Array.from(item.ids)[0] || '-',
-      interactorId: Array.from(item.ids)[0] || '-',
-      databases: Array.from(item.databases).sort(),
-      count: item.databases.size,
-    }))
+    .map(item => {
+      const databases = Array.from(item.databases.values())
+        .sort((a, b) => a.name.localeCompare(b.name))
+
+      return {
+        geneName: Array.from(item.geneNames)[0] || Array.from(item.ids)[0] || '-',
+        interactorId: Array.from(item.ids)[0] || '-',
+        databases,
+        count: databases.length,
+      }
+    })
     .sort((a, b) => b.count - a.count || a.geneName.localeCompare(b.geneName))
 
   return { searchedDatabases, overlapEntries }
@@ -152,7 +161,30 @@ const InteractionOverlapLog = ({ results }) => {
                       <td className="px-3 py-3 font-semibold text-slate-900">{entry.geneName}</td>
                       <td className="px-3 py-3 text-slate-600">{entry.interactorId}</td>
                       <td className="px-3 py-3 text-slate-700">{entry.count} databases</td>
-                      <td className="px-3 py-3 text-slate-600">{entry.databases.join(', ')}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {entry.databases.map(({ name, interactionLink }) => {
+                            const className = `inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${DATABASE_STYLES[name]?.chip || 'border-slate-200 bg-white text-slate-700'}`
+
+                            return interactionLink ? (
+                              <a
+                                key={name}
+                                href={interactionLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`${className} hover:brightness-95 hover:underline`}
+                                aria-label={`Open this interaction in ${name}`}
+                              >
+                                {name} <span aria-hidden="true" className="ml-1">↗</span>
+                              </a>
+                            ) : (
+                              <span key={name} className={className}>
+                                {name}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
