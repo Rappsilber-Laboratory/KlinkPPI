@@ -12,7 +12,7 @@ const Navbar = () => {
           aria-label="Rappsilber Lab website"
         >
           <img
-            src="/RapLabTextLogo.png"
+            src={`${import.meta.env.BASE_URL}RapLabTextLogo.png`} 
             alt="Rappsilber Lab"
             className="h-10 w-auto sm:h-12"
           />
