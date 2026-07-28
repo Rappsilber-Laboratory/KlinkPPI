@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
 
 const DB_OPTIONAL_COLUMNS = {
     String: [
