@@ -13,6 +13,7 @@ from app.services.populate_mitab import (
     _format_biogrid_type,
     _format_method,
     _format_methods,
+    _gene_alias,
     _join,
     _pubmed_values,
     _score_values,
@@ -74,6 +75,8 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
             if db_name == "String":
                 row["#ID(s) interactor A"] = _format_interactor(interaction, "A", "stringdb")
                 row["ID(s) interactor B"] = _format_interactor(interaction, "B", "stringdb")
+                row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name_A"))
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Interaction type(s)"] = "string-functional-association"
                 row["Source database(s)"] = 'psi-mi:"MI:1014"(string)'
                 row["Confidence value(s)"] = _score_values(interaction, selected_columns, STRING_SCORE_FIELDS)
@@ -82,6 +85,8 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
                 row = _base_row(final_columns, tax_id, interaction.get("Taxid_A"), interaction.get("Taxid_B"))
                 row["#ID(s) interactor A"] = _format_interactor(interaction, "A", "uniprotkb")
                 row["ID(s) interactor B"] = _format_interactor(interaction, "B", "uniprotkb")
+                row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name_A"))
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Source database(s)"] = interaction.get("Source_Database") or 'psi-mi:"MI:0469"(intact)'
                 if "Interaction_Type" in selected_columns and interaction.get("Interaction_Type"):
                     row["Interaction type(s)"] = interaction.get("Interaction_Type")
@@ -94,6 +99,10 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
             elif db_name == "BioGrid":
                 row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
                 row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+                row["Alias(es) interactor A"] = _gene_alias(
+                    interaction.get("Interactor_Gene_Name_A") or interaction.get("Interactor_Gene_Name")
+                )
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Source database(s)"] = 'psi-mi:"MI:0463"(biogrid)'
                 if "Interaction_Detection_Method" in selected_columns:
                     row["Interaction detection method(s)"] = _format_method(interaction.get("Interaction_Detection_Method"))
@@ -105,6 +114,10 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
             elif db_name == "Predictomes":
                 row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
                 row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+                row["Alias(es) interactor A"] = _gene_alias(
+                    interaction.get("Interactor_Gene_Name_A") or interaction.get("Interactor_Gene_Name")
+                )
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Interaction type(s)"] = "predictomes-structural-prediction"
                 row["Source database(s)"] = "predictomes"
                 row["Confidence value(s)"] = _score_values(interaction, selected_columns, PREDICTOMES_SCORE_FIELDS)
@@ -112,6 +125,10 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
             elif db_name == "Corum":
                 row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
                 row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+                row["Alias(es) interactor A"] = _gene_alias(
+                    interaction.get("Interactor_Gene_Name_A") or interaction.get("Interactor_Gene_Name")
+                )
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Interaction type(s)"] = "corum-complex-co-membership"
                 row["Source database(s)"] = "corum"
                 if "Purification_Method" in selected_columns:
@@ -135,6 +152,10 @@ def _rows_to_mitab(rows_by_db: dict[str, list[dict] | dict], tax_id: str, select
                     if interactor_b_uniprot
                     else f"ensembl:{interactor_b_ensembl or interaction.get('Interactor_B', '-')}"
                 )
+                row["Alias(es) interactor A"] = _gene_alias(
+                    interaction.get("Interactor_Gene_Name_A") or interaction.get("Interactor_Gene_Name")
+                )
+                row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
                 row["Interaction type(s)"] = 'psi-mi:"MI:0407"(direct interaction)'
                 row["Source database(s)"] = "huri"
 

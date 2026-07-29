@@ -6,6 +6,7 @@ const HuRiResults = ({ data }) => {
     const Interactions = data.HuRI[1].Interactors
 
     const headers = [
+        { label: 'Gene Name' },
         { label: 'Interactor UniProt' },
         { label: 'Interactor Ensembl' },
         { label: 'Link' }
@@ -13,6 +14,7 @@ const HuRiResults = ({ data }) => {
 
     const rows = Interactions.map((i) => (
         <>
+            <td className="px-4 py-3 text-gray-700">{i.Interactor_Gene_Name || '-'}</td>
             <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A_UniProt || i.Interactor_A || '-'}</td>
             <td className="px-4 py-3 text-slate-600">{i.Interactor_A_Ensembl || '-'}</td>
             <td className="px-4 py-3">

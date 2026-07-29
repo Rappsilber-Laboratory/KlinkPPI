@@ -106,5 +106,8 @@ def flatten_results(results, selected_databases):
                 temp["Interactor_B_UniProt"]=interaction.get("Interactor_B_UniProt",'-')
                 temp["Interactor_A_Ensembl"]=interaction.get("Interactor_A_Ensembl",'-')
                 temp["Interactor_B_Ensembl"]=interaction.get("Interactor_B_Ensembl",'-')
+                temp["Interactor_Gene_Name"]=interaction.get("Interactor_Gene_Name",'-')
+                temp["Interactor_Gene_Name_A"]=interaction.get("Interactor_Gene_Name_A",'-')
+                temp["Interactor_Gene_Name_B"]=interaction.get("Interactor_Gene_Name_B",'-')
                 rows.append(temp)
     return rows
