@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 from urllib.parse import quote
 
 
-CORUM_MAPPING_DF = pd.read_csv("../Data/Corum/corum_uniprotCorumMapping.txt", sep="\t")
-CORUM_COMPLEXES_DF = pd.read_json("../Data/Corum/corum_allComplexes.json")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+CORUM_MAPPING_PATH = PROJECT_ROOT / "Data" / "Corum" / "corum_uniprotCorumMapping.txt"
+CORUM_COMPLEXES_PATH = PROJECT_ROOT / "Data" / "Corum" / "corum_allComplexes.json"
+
+CORUM_MAPPING_DF = pd.read_csv(CORUM_MAPPING_PATH, sep="\t")
+CORUM_COMPLEXES_DF = pd.read_json(CORUM_COMPLEXES_PATH)
 
 
 def _clean_value(value):
