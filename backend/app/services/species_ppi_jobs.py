@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
 import threading
-from typing import Optional
+from typing import Iterator, Optional
 from uuid import uuid4
 
 import pandas as pd
@@ -150,8 +150,7 @@ def _raise_if_cancelled(job_id: str) -> None:
         raise SpeciesJobCancelled("Species PPI job was cancelled")
 
 
-def _build_biogrid_species_rows(tax_id: str) -> list[dict]:
-    rows = []
+def _iter_biogrid_species_rows(tax_id: str) -> Iterator[dict]:
     with BIOGRID_SOURCE_PATH.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
@@ -165,26 +164,26 @@ def _build_biogrid_species_rows(tax_id: str) -> list[dict]:
             if not uniprot_a or not uniprot_b:
                 continue
 
-            rows.append(
-                {
-                    "Interactor_A": uniprot_a,
-                    "Interactor_B": uniprot_b,
-                    "Interactor_Gene_Name_A": _extract_gene_name(row["Aliases Interactor A"]),
-                    "Interactor_Gene_Name_B": _extract_gene_name(row["Aliases Interactor B"]),
-                    "organism": tax_id,
-                    "Interaction_Detection_Method": _extract_detection_method(row["Interaction Detection Method"]),
-                    "Interaction_Type": _extract_interaction_type(row["Interaction Types"]),
-                    "Confidence_Score": _extract_confidence_score(row["Confidence Values"]),
-                }
-            )
-    return rows
+            yield {
+                "Interactor_A": uniprot_a,
+                "Interactor_B": uniprot_b,
+                "Interactor_Gene_Name_A": _extract_gene_name(row["Aliases Interactor A"]),
+                "Interactor_Gene_Name_B": _extract_gene_name(row["Aliases Interactor B"]),
+                "organism": tax_id,
+                "Interaction_Detection_Method": _extract_detection_method(row["Interaction Detection Method"]),
+                "Interaction_Type": _extract_interaction_type(row["Interaction Types"]),
+                "Confidence_Score": _extract_confidence_score(row["Confidence Values"]),
+            }
 
 
-def _build_predictomes_species_rows(tax_id: str) -> list[dict]:
+def _build_biogrid_species_rows(tax_id: str) -> list[dict]:
+    return list(_iter_biogrid_species_rows(tax_id))
+
+
+def _iter_predictomes_species_rows(tax_id: str) -> Iterator[dict]:
     if tax_id != "9606":
-        return []
+        return
 
-    rows = []
     for row in PREDICTOMES_DF.itertuples(index=False):
         interaction = row.uniprot_ids.split(":")
         if len(interaction) != 2:
@@ -192,56 +191,56 @@ def _build_predictomes_species_rows(tax_id: str) -> list[dict]:
         uniprot_a = interaction[0].strip()
         uniprot_b = interaction[1].strip()
         gene_name_a, gene_name_b = _extract_predictomes_gene_names(row.complex_name)
-        rows.append(
-            {
-                "Interactor_A": uniprot_a,
-                "Interactor_B": uniprot_b,
-                "Interactor_Gene_Name_A": gene_name_a,
-                "Interactor_Gene_Name_B": gene_name_b,
-                "spoc_score": float(row.spoc_score),
-                "kirc_score": float(row.kirc_score),
-                "num_unique_contacts": int(row.num_unique_contacts),
-            }
-        )
-    return rows
+        yield {
+            "Interactor_A": uniprot_a,
+            "Interactor_B": uniprot_b,
+            "Interactor_Gene_Name_A": gene_name_a,
+            "Interactor_Gene_Name_B": gene_name_b,
+            "spoc_score": float(row.spoc_score),
+            "kirc_score": float(row.kirc_score),
+            "num_unique_contacts": int(row.num_unique_contacts),
+        }
 
 
-def _build_huri_species_rows(tax_id: str) -> list[dict]:
+def _build_predictomes_species_rows(tax_id: str) -> list[dict]:
+    return list(_iter_predictomes_species_rows(tax_id))
+
+
+def _iter_huri_species_rows(tax_id: str) -> Iterator[dict]:
     if tax_id != "9606":
-        return []
+        return
 
-    rows = []
     if {"Interactor_A_Ensembl", "Interactor_B_Ensembl"}.issubset(HURI_DF.columns):
         for row in HURI_DF.itertuples(index=False):
             interactor_a_uniprot = getattr(row, "Interactor_A_UniProt", None)
             interactor_b_uniprot = getattr(row, "Interactor_B_UniProt", None)
             interactor_a_ensembl = getattr(row, "Interactor_A_Ensembl")
             interactor_b_ensembl = getattr(row, "Interactor_B_Ensembl")
-            rows.append(
-                {
-                    "Interactor_A": interactor_a_uniprot or interactor_a_ensembl,
-                    "Interactor_B": interactor_b_uniprot or interactor_b_ensembl,
-                    "Interactor_A_UniProt": interactor_a_uniprot or None,
-                    "Interactor_B_UniProt": interactor_b_uniprot or None,
-                    "Interactor_A_Ensembl": interactor_a_ensembl,
-                    "Interactor_B_Ensembl": interactor_b_ensembl,
-                }
-            )
-        return rows
+            yield {
+                "Interactor_A": interactor_a_uniprot or interactor_a_ensembl,
+                "Interactor_B": interactor_b_uniprot or interactor_b_ensembl,
+                "Interactor_A_UniProt": interactor_a_uniprot or None,
+                "Interactor_B_UniProt": interactor_b_uniprot or None,
+                "Interactor_A_Ensembl": interactor_a_ensembl,
+                "Interactor_B_Ensembl": interactor_b_ensembl,
+            }
+        return
 
     for row in HURI_DF.itertuples(index=False):
-        rows.append({"Interactor_A": row.interactorA, "Interactor_B": row.interactorB})
-    return rows
+        yield {"Interactor_A": row.interactorA, "Interactor_B": row.interactorB}
 
 
-def _build_corum_species_rows(tax_id: str) -> list[dict]:
+def _build_huri_species_rows(tax_id: str) -> list[dict]:
+    return list(_iter_huri_species_rows(tax_id))
+
+
+def _iter_corum_species_rows(tax_id: str) -> Iterator[dict]:
     species_config = CORUM_SPECIES_BY_TAX_ID.get(tax_id)
     if not species_config:
-        return []
+        return
 
     complex_organisms = species_config["complex_organisms"]
     subunit_organism = species_config["subunit_organism"]
-    rows = []
     complexes = CORUM_COMPLEXES_DF.loc[CORUM_COMPLEXES_DF["organism"].isin(complex_organisms)]
     for complex_row in complexes.itertuples(index=False):
         subunits = []
@@ -261,35 +260,42 @@ def _build_corum_species_rows(tax_id: str) -> list[dict]:
             )
 
         for interactor_a, interactor_b in combinations(subunits, 2):
-            rows.append(
-                {
-                    "Interactor_A": interactor_a["uniprot_id"],
-                    "Interactor_B": interactor_b["uniprot_id"],
-                    "Interactor_Gene_Name_A": interactor_a.get("gene_name"),
-                    "Interactor_Gene_Name_B": interactor_b.get("gene_name"),
-                    "Organism": interactor_a.get("organism"),
-                    "complex_name": complex_row.complex_name,
-                    "cell_line": complex_row.cell_line if not pd.isna(complex_row.cell_line) else None,
-                    "Purification_Method": [
-                        method.get("name")
-                        for method in complex_row.purification_methods
-                        if method.get("name")
-                    ],
-                }
-            )
-    return rows
+            yield {
+                "Interactor_A": interactor_a["uniprot_id"],
+                "Interactor_B": interactor_b["uniprot_id"],
+                "Interactor_Gene_Name_A": interactor_a.get("gene_name"),
+                "Interactor_Gene_Name_B": interactor_b.get("gene_name"),
+                "Organism": interactor_a.get("organism"),
+                "complex_name": complex_row.complex_name,
+                "cell_line": complex_row.cell_line if not pd.isna(complex_row.cell_line) else None,
+                "Purification_Method": [
+                    method.get("name")
+                    for method in complex_row.purification_methods
+                    if method.get("name")
+                ],
+            }
+
+
+def _build_corum_species_rows(tax_id: str) -> list[dict]:
+    return list(_iter_corum_species_rows(tax_id))
 
 
 def _build_species_database_rows(db_name: str, tax_id: str) -> list[dict]:
+    return list(iter_species_database_rows(db_name, tax_id))
+
+
+def iter_species_database_rows(db_name: str, tax_id: str) -> Iterator[dict]:
     if db_name == "BioGrid":
-        return _build_biogrid_species_rows(tax_id)
+        yield from _iter_biogrid_species_rows(tax_id)
+        return
     if db_name == "Predictomes":
-        return _build_predictomes_species_rows(tax_id)
+        yield from _iter_predictomes_species_rows(tax_id)
+        return
     if db_name == "HuRI":
-        return _build_huri_species_rows(tax_id)
+        yield from _iter_huri_species_rows(tax_id)
+        return
     if db_name == "Corum":
-        return _build_corum_species_rows(tax_id)
-    return []
+        yield from _iter_corum_species_rows(tax_id)
 
 
 def _run_species_job(job_id: str) -> None:
