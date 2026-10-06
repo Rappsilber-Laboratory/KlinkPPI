@@ -16,6 +16,12 @@ SUPPORTED_ORGANISM_FILES = {
     "Corum": SUPPORTED_ORGANISM_DIR / "AllSpeciesCorum.csv",
     "Predictomes": SUPPORTED_ORGANISM_DIR / "AllSpeciesPredictomes.csv",
     "HuRI": SUPPORTED_ORGANISM_DIR / "AllSpeciesHuRI.csv",
+    "ComplexPortal": SUPPORTED_ORGANISM_DIR / "AllSpeciesComplexPortal.csv",
+    "Reactome": SUPPORTED_ORGANISM_DIR / "AllSpeciesReactome.csv",
+    "Signor": SUPPORTED_ORGANISM_DIR / "AllSpeciesSignor.csv",
+    "Hippie": SUPPORTED_ORGANISM_DIR / "AllSpeciesHippie.csv",
+    "HuMap": SUPPORTED_ORGANISM_DIR / "AllSpeciesHuMap.csv",
+    "Mint": SUPPORTED_ORGANISM_DIR / "AllSpeciesMint.csv",
 }
 
 COMMON_SPECIES_ALIASES = {

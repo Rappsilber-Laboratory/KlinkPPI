@@ -12,6 +12,8 @@ import pandas as pd
 
 from app.services.resolve_corum import CORUM_COMPLEXES_DF
 from app.services.resolve_huri import HURI_DF
+from app.services.resolve_complex_portal import iter_complex_portal_species_rows
+from app.services.resolve_humap import ensure_humap_bundle
 from app.services.species_ppi_remote import (
     SpeciesJobCancelled,
     SpeciesRemoteDataNotFound,
@@ -25,7 +27,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BIOGRID_SOURCE_PATH = PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.mitab.txt"
 PREDICTOMES_SOURCE_PATH = PROJECT_ROOT / "Data" / "Predictomes" / "Predictomes.csv"
 
-SUPPORTED_COMPLETE_SPECIES_DATABASES = {"BioGrid", "Corum", "Predictomes", "HuRI", "String", "IntAct"}
+SUPPORTED_COMPLETE_SPECIES_DATABASES = {
+    "BioGrid", "Corum", "Predictomes", "HuRI", "String", "IntAct", "ComplexPortal", "HuMap"
+}
 
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
@@ -285,6 +289,9 @@ def _build_species_database_rows(db_name: str, tax_id: str) -> list[dict]:
 
 
 def iter_species_database_rows(db_name: str, tax_id: str) -> Iterator[dict]:
+    if db_name == "ComplexPortal":
+        yield from iter_complex_portal_species_rows(tax_id)
+        return
     if db_name == "BioGrid":
         yield from _iter_biogrid_species_rows(tax_id)
         return
@@ -334,6 +341,8 @@ def _run_species_job(job_id: str) -> None:
                     rows = ensure_string_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
                 elif db_name == "IntAct":
                     rows = ensure_intact_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
+                elif db_name == "HuMap":
+                    rows = ensure_humap_bundle(tax_id)
                 else:
                     rows = _build_species_database_rows(db_name, tax_id)
                     _raise_if_cancelled(job_id)

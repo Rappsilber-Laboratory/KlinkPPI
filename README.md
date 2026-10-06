@@ -1,6 +1,6 @@
 # KlinkPPI
 
-KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, and `Predictomes`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
+KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, `Predictomes`, `Complex Portal`, `Reactome`, `SIGNOR`, `HIPPIE`, `hu.MAP 3.0`, and `MINT`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
 
 ## Features
 
@@ -85,6 +85,26 @@ Then open:
 
 ```text
 http://localhost:5174
+```
+
+### Extended database data
+
+Complex Portal species files are cached automatically on first use. Reactome and MINT are queried through their PSICQUIC services; SIGNOR and HIPPIE use their public query APIs.
+
+The hu.MAP 3.0 interaction network is a large bulk download and is deliberately not downloaded by a web request. Install or refresh its local SQLite lookup index explicitly:
+
+```bash
+.venv/bin/python scripts/update_extended_databases.py --source humap
+```
+
+Until that command finishes, hu.MAP remains selectable and reports that its local index is not installed. Every source, including each extended source, has an `AllSpecies*.csv` file under `Supported_Organisms/` and therefore participates in the organism coverage and overlap overview.
+
+Complete-species jobs are implemented for Complex Portal and hu.MAP 3.0. Reactome, SIGNOR, HIPPIE, and MINT currently support single-protein searches and exports; their complete-species bulk ingestion remains intentionally disabled until version-pinned bulk refresh jobs are added.
+
+Run the extended-source regression tests with:
+
+```bash
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s tests -v
 ```
 
 The default frontend port is `5174`. If that port is already in use, pass a different port from the project root:

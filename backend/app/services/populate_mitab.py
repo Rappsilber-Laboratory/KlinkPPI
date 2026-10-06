@@ -273,6 +273,55 @@ def populate_corum(data: list, final_columns: list, selected_columns: list, unip
     return rows
 
 
+EXTENDED_SOURCE_NAMES = {
+    "ComplexPortal": "complex portal",
+    "Reactome": 'psi-mi:"MI:0467"(reactome)',
+    "Signor": "signor",
+    "Hippie": "hippie",
+    "HuMap": "humap3",
+    "Mint": 'psi-mi:"MI:0471"(mint)',
+}
+
+
+def populate_extended(database_name: str, data: list, final_columns: list, selected_columns: list, uniprot_id, tax_id):
+    rows = []
+    interactions = data[1].get("Interactors", []) if len(data) > 1 else []
+    for interaction in interactions:
+        row = _base_row(final_columns, tax_id, interaction.get("organism_tax_id"), tax_id)
+        row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
+        row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', uniprot_id)}"
+        row["Alias(es) interactor A"] = _gene_alias(interaction.get("Interactor_Gene_Name"))
+        row["Interaction type(s)"] = interaction.get("Interaction_Type") or interaction.get("Evidence_Class") or "-"
+        row["Source database(s)"] = EXTENDED_SOURCE_NAMES[database_name]
+
+        detection_method = interaction.get("Interaction_Detection_Method") or interaction.get("Mechanism")
+        if detection_method:
+            row["Interaction detection method(s)"] = _format_method(detection_method)
+        if interaction.get("PubMed_Ids"):
+            row["Publication Identifier(s)"] = _pubmed_values(interaction.get("PubMed_Ids"))
+
+        evidence = []
+        for field, label in (
+            ("Confidence_Score", f"{database_name.lower()}-score"),
+            ("complex_id", "complex-portal-complex-id"),
+            ("Effect", "signor-effect"),
+            ("Mechanism", "signor-mechanism"),
+            ("Source_Count", "hippie-source-count"),
+            ("Experiment_Count", "hippie-experiment-count"),
+        ):
+            if _has_value(interaction.get(field)):
+                evidence.append(f"{label}:{interaction.get(field)}")
+        row["Confidence value(s)"] = _join(evidence)
+        rows.append(row)
+    return rows
+
+
+def _extended_populator(database_name: str):
+    return lambda data, final_columns, selected_columns, uniprot_id, tax_id: populate_extended(
+        database_name, data, final_columns, selected_columns, uniprot_id, tax_id
+    )
+
+
 DBs = {
     "String": populate_string,
     "Predictomes": populate_predictomes,
@@ -280,4 +329,10 @@ DBs = {
     "IntAct": populate_intact,
     "HuRI": populate_huri,
     "Corum": populate_corum,
+    "ComplexPortal": _extended_populator("ComplexPortal"),
+    "Reactome": _extended_populator("Reactome"),
+    "Signor": _extended_populator("Signor"),
+    "Hippie": _extended_populator("Hippie"),
+    "HuMap": _extended_populator("HuMap"),
+    "Mint": _extended_populator("Mint"),
 }

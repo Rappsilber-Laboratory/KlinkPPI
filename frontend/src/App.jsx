@@ -12,6 +12,9 @@ import CorumResults from './components/CorumResults'
 import IntactResults from './components/IntaActResults'
 import HuRiResults from './components/HuRiResults'
 import DownloadPanel from './components/DownloadPanel'
+import ExtendedDatabaseResults from './components/ExtendedDatabaseResults'
+
+const EXTENDED_DATABASES = ['ComplexPortal', 'Reactome', 'Signor', 'Hippie', 'HuMap', 'Mint']
 
 const DATABASE_HEADER_COLORS = {
     STRING: 'bg-sky-700',
@@ -20,6 +23,12 @@ const DATABASE_HEADER_COLORS = {
     Predictomes: 'bg-indigo-700',
     CORUM: 'bg-amber-700',
     HuRI: 'bg-rose-700',
+    ComplexPortal: 'bg-cyan-700',
+    Reactome: 'bg-lime-700',
+    Signor: 'bg-red-700',
+    Hippie: 'bg-teal-700',
+    HuMap: 'bg-violet-700',
+    Mint: 'bg-pink-700',
 }
 
 const getDBStatus = (dbData, key, interactorKey) => {
@@ -79,6 +88,9 @@ function App() {
     const predictomesData = results?.[1]?.output?.find(db => db.Predictomes)
     const huriData = results?.[1]?.output?.find(db => db.HuRI)
     const biogridData = results?.[1]?.output?.find(db => db.BioGrid)
+    const extendedData = Object.fromEntries(
+        EXTENDED_DATABASES.map(dbKey => [dbKey, results?.[1]?.output?.find(item => item[dbKey])])
+    )
 
     const stringStatus = getDBStatus(stringData, 'String', 'Direct_Interactions')
     const intactStatus = getDBStatus(intactData, 'IntAct', 'Interactions')
@@ -130,6 +142,16 @@ function App() {
                         {huriData && (huriStatus === 'valid'
                             ? <HuRiResults data={huriData} />
                             : <NoResults dbName="HuRI" reason={huriStatus} />)}
+
+                        {EXTENDED_DATABASES.map(dbKey => {
+                            const databaseData = extendedData[dbKey]
+                            if (!databaseData) return null
+                            const status = getDBStatus(databaseData, dbKey, 'Interactors')
+                            const hasSourceError = Boolean(databaseData?.[dbKey]?.[0]?.info?.Error)
+                            return status === 'valid' || hasSourceError
+                                ? <ExtendedDatabaseResults key={dbKey} dbKey={dbKey} data={databaseData} />
+                                : <NoResults key={dbKey} dbName={dbKey} reason={status} />
+                        })}
                     </div>
                 )}
             </main>

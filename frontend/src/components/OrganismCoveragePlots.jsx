@@ -9,6 +9,12 @@ const DATABASE_STYLES = {
   Corum: { label: 'CORUM', color: '#d97706' },
   Predictomes: { label: 'Predictomes', color: '#4f46e5' },
   HuRI: { label: 'HuRI', color: '#e11d48' },
+  ComplexPortal: { label: 'Complex Portal', color: '#0e7490' },
+  Reactome: { label: 'Reactome', color: '#4d7c0f' },
+  Signor: { label: 'SIGNOR', color: '#b91c1c' },
+  Hippie: { label: 'HIPPIE', color: '#0f766e' },
+  HuMap: { label: 'hu.MAP', color: '#6d28d9' },
+  Mint: { label: 'MINT', color: '#be185d' },
 }
 
 const formatCount = (value) => new Intl.NumberFormat().format(value || 0)
@@ -65,7 +71,7 @@ const OrganismCoveragePlots = () => {
   }, [summary])
 
   const maxCount = Math.max(...databaseCounts.map((item) => item.count), 1)
-  const chartWidth = 520
+  const chartWidth = Math.max(520, databaseCounts.length * 82)
   const chartHeight = 260
   const plotTop = 28
   const plotBottom = 42
@@ -107,7 +113,8 @@ const OrganismCoveragePlots = () => {
           </div>
 
           {summary ? (
-            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Histogram of supported Taxon IDs by database" className="h-[20rem] w-full">
+            <div className="overflow-x-auto">
+            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Histogram of supported Taxon IDs by database" className="h-[20rem] max-w-none" style={{ width: `${chartWidth}px`, minWidth: '100%' }}>
               <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={chartHeight - plotBottom} stroke="#cbd5e1" />
               <line x1={plotLeft} y1={chartHeight - plotBottom} x2={chartWidth - plotRight} y2={chartHeight - plotBottom} stroke="#cbd5e1" />
               <text x={plotLeft - 8} y={plotTop + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
@@ -148,6 +155,7 @@ const OrganismCoveragePlots = () => {
                 )
               })}
             </svg>
+            </div>
           ) : (
             <div className="flex h-[20rem] items-center justify-center text-sm text-slate-500">
               Loading database counts...

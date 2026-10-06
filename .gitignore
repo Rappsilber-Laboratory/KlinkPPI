@@ -20,3 +20,5 @@ Data
 !scripts/
 !scripts/*.mjs
 frontend/node_modules/*
+!tests/
+!tests/test_extended_databases.py
