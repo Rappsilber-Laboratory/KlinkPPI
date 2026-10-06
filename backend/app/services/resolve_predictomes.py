@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
 
 
-PREDICTOMES_DF = pd.read_csv("../Data/Predictomes/Predictomes.csv")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PREDICTOMES_PATH = PROJECT_ROOT / "Data" / "Predictomes" / "Predictomes.csv"
+
+PREDICTOMES_DF = pd.read_csv(PREDICTOMES_PATH)
 PREDICTOMES_INDEX: dict[str, list[dict]] = defaultdict(list)
 
 

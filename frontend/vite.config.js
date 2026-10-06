@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 
+const API_PREFIX = '/api'
+
 export default defineConfig({
   plugins: [
     react(),tailwindcss()],
