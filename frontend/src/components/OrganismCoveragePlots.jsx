@@ -105,8 +105,8 @@ const OrganismCoveragePlots = () => {
       ) : null}
 
       {!error ? (
-      <div className="mx-auto grid w-full max-w-[110rem] gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mx-auto grid grid-cols-1 w-full max-w-[110rem] gap-4 lg:grid-cols-2">
+        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h2 className="text-base font-semibold text-slate-900">Supported Taxon IDs by database</h2>
             <p className="text-sm text-slate-500">Count of unique organisms listed in each source file</p>
@@ -163,7 +163,7 @@ const OrganismCoveragePlots = () => {
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Exact overlaps</h2>

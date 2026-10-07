@@ -1,6 +1,6 @@
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional
+from typing import List, Literal, Optional
 from fastapi import FastAPI,HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.services.convert_input_to_uniprotKB import get_job_id
@@ -8,7 +8,7 @@ from app.services.resolve_string import get_string_interactions
 from app.services.resolve_intact import resolve_intact
 from app.services.resolve_predictomes import resolve_predictomes
 from app.services.resolve_biogrid import resolve_biogrid
-from app.services.resolve_corum import resolve_corum
+from app.services.resolve_corum import resolve_corum, resolve_corum_collection
 from app.services.resolve_huri import resolve_HuRI
 from app.services.resolve_complex_portal import resolve_complex_portal
 from app.services.resolve_hippie import resolve_hippie
@@ -27,7 +27,8 @@ from app.services.select_columns_mitab import build_final_columns
 from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
-from pydantic import BaseModel,EmailStr
+from pydantic import BaseModel,EmailStr,Field
+from app.services import collection_search
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -414,3 +415,70 @@ def download_parquet(request: DownloadRequest):
             f"attachment; filename={request.uniprot_id}.parquet"
         }
     )
+
+
+# Collection searches retain candidate lists on the server so clients cannot
+# introduce unvalidated accessions or silently choose ambiguous mappings.
+def resolve_collection_database(database_name: str, uniprotkb_id: str, tax_id: str):
+    if database_name == "Corum":
+        return resolve_corum_collection(uniprotkb_id, tax_id)
+    return resolve_database_safely(database_name, uniprotkb_id, tax_id)
+
+
+class CollectionRequest(BaseModel):
+    identifiers: list[str] = Field(min_length=1, max_length=collection_search.MAX_INPUTS)
+    species_name: str = Field(min_length=1, max_length=200)
+    tax_id: Optional[str] = None
+    selected_databases: list[str] = Field(min_length=1, max_length=12)
+    input_type: Literal["auto", "UniProtKB", "Gene_Name", "Ensembl", "GeneID"] = "auto"
+    mode: Literal["induced", "expanded"] = "induced"
+
+
+class CollectionChoices(BaseModel):
+    choices: dict[str, Optional[str]] = Field(default_factory=dict)
+
+
+@app.post("/collection/jobs", status_code=202)
+def start_collection(request: CollectionRequest):
+    tax_id, _, species = resolve_species_context(request.tax_id, request.species_name)
+    if not tax_id or not species:
+        raise HTTPException(status_code=400, detail="Select a supported species before collection search")
+    identifiers = list(dict.fromkeys(token.strip() for token in request.identifiers if token.strip()))
+    if not identifiers or any(len(token) > 100 for token in identifiers):
+        raise HTTPException(status_code=400, detail="Provide 1–200 identifiers, each at most 100 characters")
+    supported = get_supported_databases(tax_id)
+    databases = list(dict.fromkeys(request.selected_databases))
+    invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Databases unavailable for this species: {', '.join(invalid)}")
+    try:
+        return collection_search.create_job(identifiers, tax_id, species["display_name"], databases,
+                                            request.input_type, request.mode, resolve_collection_database)
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}")
+def collection_status(job_id: str):
+    try:
+        return collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+
+
+@app.post("/collection/jobs/{job_id}/run", status_code=202)
+def run_collection(job_id: str, request: CollectionChoices):
+    try:
+        return collection_search.run_job(job_id, request.choices)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/collection/jobs/{job_id}/cancel")
+def cancel_collection(job_id: str):
+    try:
+        return collection_search.cancel_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")

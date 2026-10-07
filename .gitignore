@@ -22,3 +22,13 @@ Data
 frontend/node_modules/*
 !tests/
 !tests/test_extended_databases.py
+
+# Collection analysis source and regression tests
+!frontend/src/collection/*.js
+!frontend/tests/
+!frontend/tests/*.js
+!backend/tests/
+!backend/tests/test_collection_search.py
+!backend/tests/test_collection_evidence.py
+
+frontend/dist/

@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import './App.css'
 import Navbar from './components/Navbar'
 import OrganismCoveragePlots from './components/OrganismCoveragePlots'
 import SearchSection from './components/SearchSection'
+import './collection/collection.css'
+const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
 import InputSummary from './components/InputSummary'
 import InteractionOverlapLog from './components/InteractionOverlapLog'
 import StringResults from './components/StringResults'
@@ -81,6 +83,8 @@ const NoResults = ({ dbName, reason }) => (
 
 function App() {
     const [results, setresults] = useState(null)
+    const [searchTab, setSearchTab] = useState('single')
+    const [collectionOpened, setCollectionOpened] = useState(false)
 
     const stringData = results?.[1]?.output?.find(db => db.String)
     const intactData = results?.[1]?.output?.find(db => db.IntAct)
@@ -104,6 +108,14 @@ function App() {
             <Navbar />
             <main className="flex-1">
                 <OrganismCoveragePlots />
+                <div className="search-tabs" role="tablist" aria-label="Search workflows">
+                    <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => setSearchTab('single')}>Single searches</button>
+                    <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => { setSearchTab('collection'); setCollectionOpened(true) }}>Collection search</button>
+                </div>
+                <div id="collection-search-panel" role="tabpanel" aria-labelledby="collection-search-tab" hidden={searchTab !== 'collection'}>
+                    <Suspense fallback={<p className="collection-shell">Loading collection search…</p>}>{collectionOpened && <CollectionSearch />}</Suspense>
+                </div>
+                <div id="single-search-panel" role="tabpanel" aria-labelledby="single-search-tab" hidden={searchTab !== 'single'}>
                 <SearchSection setresults={setresults} />
 
                 {results && (
@@ -154,6 +166,7 @@ function App() {
                         })}
                     </div>
                 )}
+                </div>
             </main>
 
             <footer className="border-t border-slate-300 bg-slate-100 px-4 py-6 text-sm text-slate-700 sm:px-6">
