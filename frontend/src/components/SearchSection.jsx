@@ -82,6 +82,7 @@ const SearchSection = ({setresults}) => {
     const [speciesJob,setspeciesJob]=useState(null)
     const [speciesLogOpen,setspeciesLogOpen]=useState(true)
     const [selected_databases,setselected_databases]=useState([])
+    const [databaseStatuses,setDatabaseStatuses]=useState({})
     const [loading,setloading]=useState(false)
     const [loadingMessage,setloadingMessage]=useState('Searching databases...')
     const abortController = React.useRef(null)
@@ -193,6 +194,8 @@ const SearchSection = ({setresults}) => {
         )
         setloading(true)
         setresults(null)
+        const requestedDatabases = selected_databases.length > 0 ? selected_databases : ALL_DATABASES
+        setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => [database, 'running'])))
         abortController.current = new AbortController()
 
         try{
@@ -227,6 +230,12 @@ const SearchSection = ({setresults}) => {
             }
 
             setresults(data)
+            const output = data?.[1]?.output || []
+            setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => {
+                const value = output.find(item => Object.hasOwn(item, database))?.[database]
+                const failed = typeof value === 'string' || value?.[0]?.info?.Error
+                return [database, failed ? 'failed' : 'completed']
+            })))
             settax_id(data?.[0]?.Input?.TaxonomyId || '')
             setspecies_name(data?.[0]?.Input?.SpeciesName || species_name)
             setshowSpeciesSuggestions(false)
@@ -237,6 +246,7 @@ const SearchSection = ({setresults}) => {
           } else {
             alert(error.message)
           }
+          setDatabaseStatuses(current => Object.fromEntries(Object.keys(current).map(database => [database, 'failed'])))
           console.log(error)
         }finally{
           setloading(false)
@@ -430,10 +440,10 @@ const SearchSection = ({setresults}) => {
 
   return (
     <div>
-      <section className="bg-slate-200 py-14 px-4 sm:px-6">
-      <div className="w-full max-w-[110rem] mx-auto">
-        <div className="bg-white shadow-md rounded-2xl p-8 grid gap-8 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start">
-        <div className="flex flex-col gap-4">
+      <section className="single-search-section px-4 sm:px-6">
+      <div className="app-frame w-full mx-auto">
+        <div className="single-search-card grid gap-8 lg:grid-cols-[minmax(15rem,21rem)_minmax(0,1fr)] lg:items-start">
+        <div className="database-picker flex flex-col gap-4">
         <label className='font-bold text-left'>Databases Selections:</label>
 
         <div className="space-y-2">
@@ -444,7 +454,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('String')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">STRING</span>
+        <span className={`database-status-dot ${databaseStatuses.String || 'idle'}`} /><span className="font-medium text-slate-900">STRING</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -454,7 +464,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('IntAct')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">IntAct</span>
+        <span className={`database-status-dot ${databaseStatuses.IntAct || 'idle'}`} /><span className="font-medium text-slate-900">IntAct</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -464,7 +474,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('BioGrid')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">BioGRID</span>
+        <span className={`database-status-dot ${databaseStatuses.BioGrid || 'idle'}`} /><span className="font-medium text-slate-900">BioGRID</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -474,7 +484,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Corum')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">CORUM</span>
+        <span className={`database-status-dot ${databaseStatuses.Corum || 'idle'}`} /><span className="font-medium text-slate-900">CORUM</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -484,7 +494,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('HuRI')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">HuRI</span>
+        <span className={`database-status-dot ${databaseStatuses.HuRI || 'idle'}`} /><span className="font-medium text-slate-900">HuRI</span>
         </label>
 
         <label className="flex items-center gap-2 mb-3">
@@ -494,7 +504,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Predictomes')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">Predictomes</span>
+        <span className={`database-status-dot ${databaseStatuses.Predictomes || 'idle'}`} /><span className="font-medium text-slate-900">Predictomes</span>
         </label>
 
         {EXTENDED_DATABASES.map(([databaseKey, databaseLabel]) => (
@@ -505,7 +515,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes(databaseKey)}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">{databaseLabel}</span>
+        <span className={`database-status-dot ${databaseStatuses[databaseKey] || 'idle'}`} /><span className="font-medium text-slate-900">{databaseLabel}</span>
         </label>
         ))}
         </div>

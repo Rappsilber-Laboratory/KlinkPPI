@@ -1,4 +1,4 @@
-import DBHeader from './DBHeader'
+import DatabaseResultCard from './DatabaseResultCard'
 
 const CONFIG = {
   ComplexPortal: {
@@ -42,14 +42,13 @@ const ExtendedDatabaseResults = ({ dbKey, data }) => {
   if (!config) return null
 
   return (
-    <section className="mb-8 overflow-hidden rounded-2xl bg-white shadow-md">
-      <DBHeader
+    <DatabaseResultCard className="rounded-2xl"
         name={config.label}
         subtitle={config.subtitle}
         count={interactions.length}
         color={config.color}
         databaseLink={info.Database_Link}
-      />
+      >
       {info.Overlap_Warning ? (
         <p className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-900">{info.Overlap_Warning}</p>
       ) : null}
@@ -79,7 +78,7 @@ const ExtendedDatabaseResults = ({ dbKey, data }) => {
       {interactions.length > 200 ? (
         <p className="border-t border-slate-100 px-6 py-3 text-sm text-slate-500">Showing the first 200 of {interactions.length} rows. Downloads include every row.</p>
       ) : null}
-    </section>
+    </DatabaseResultCard>
   )
 }
 

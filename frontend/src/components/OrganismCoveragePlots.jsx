@@ -82,9 +82,9 @@ const OrganismCoveragePlots = () => {
   const barWidth = Math.min(48, barSlot * 0.58)
 
   return (
-    <section className="bg-slate-100 px-4 pb-8 sm:px-6">
+    <section className="coverage-section px-4 sm:px-6">
       {error ? (
-        <div className="mx-auto w-full max-w-[110rem] rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+        <div className="app-frame mx-auto w-full rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
           <h2 className="text-base font-semibold">Supported organism plots could not load</h2>
           <p className="mt-1 text-sm">
             The app could not reach <span className="font-mono">{API_BASE_URL}/supported-organisms/summary</span>.
@@ -105,8 +105,8 @@ const OrganismCoveragePlots = () => {
       ) : null}
 
       {!error ? (
-      <div className="mx-auto grid grid-cols-1 w-full max-w-[110rem] gap-4 lg:grid-cols-2">
-        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="app-frame mx-auto grid grid-cols-1 w-full gap-4 lg:grid-cols-2">
+        <div className="coverage-card min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h2 className="text-base font-semibold text-slate-900">Supported Taxon IDs by database</h2>
             <p className="text-sm text-slate-500">Count of unique organisms listed in each source file</p>
@@ -163,7 +163,7 @@ const OrganismCoveragePlots = () => {
           )}
         </div>
 
-        <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="coverage-card min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Exact overlaps</h2>

@@ -230,8 +230,8 @@ produce one protein node, while the report retains counts for the original input
 - **Expanded** adds direct first-neighbor connections from the inputs. Neighbor edges
   are gray. Neighbor-to-neighbor edges and additional hops are not queried or inferred.
 
-The Cytoscape.js canvas supports dragging, zooming, searching by gene/accession,
-node details and evidence inspection. Filter source databases, evidence category,
+The custom Canvas network supports dragging, zooming, searching by gene/accession,
+community separation, node details and click-based evidence inspection. Filter source databases, evidence category,
 reported publication count, experimental method and raw source scores. Publication
 counts use distinct IDs; unavailable metadata remain unknown. Score thresholds affect
 only evidence from the chosen database; independent retained evidence may keep a pair
@@ -276,3 +276,20 @@ npm --prefix frontend run build
 
 The evidence tests require the configured local CORUM data and backend dependencies.
 The frontend requires Node 20.19+ (or a supported newer Node release).
+
+## Python API client
+
+`klinkppi.py` provides the web application's single-protein, supported-species,
+complete-species and collection workflows without plotting dependencies. It polls
+background jobs, returns ordinary dictionaries, downloads species MITAB/Parquet,
+and exports single-search or collection results to JSON/CSV.
+
+```python
+from klinkppi import KlinkPPIClient
+
+client = KlinkPPIClient("http://127.0.0.1:8000")
+result = client.single_search("Q07889", tax_id="9606", databases=["String", "IntAct"])
+client.export_single_csv(result, "sos1_interactions.csv")
+```
+
+See `python_api_example.py` for complete-species and collection examples.

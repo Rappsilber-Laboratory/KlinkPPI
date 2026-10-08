@@ -1,7 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import './App.css'
 import Navbar from './components/Navbar'
-import OrganismCoveragePlots from './components/OrganismCoveragePlots'
 import SearchSection from './components/SearchSection'
 import './collection/collection.css'
 const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
@@ -104,10 +103,9 @@ function App() {
     const huriStatus = getDBStatus(huriData, 'HuRI', 'Interactors')
 
     return (
-        <div className="min-h-screen flex flex-col">
+        <div className="app-shell min-h-screen flex flex-col">
             <Navbar />
-            <main className="flex-1">
-                <OrganismCoveragePlots />
+            <main className="app-main flex-1">
                 <div className="search-tabs" role="tablist" aria-label="Search workflows">
                     <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => setSearchTab('single')}>Single searches</button>
                     <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => { setSearchTab('collection'); setCollectionOpened(true) }}>Collection search</button>
@@ -119,7 +117,7 @@ function App() {
                 <SearchSection setresults={setresults} />
 
                 {results && (
-                    <div className="w-full max-w-[110rem] mx-auto px-4 py-10 sm:px-6">
+                    <div className="app-results w-full mx-auto">
                         <InteractionOverlapLog results={results} />
 
                         <InputSummary input={results[0].Input} />
@@ -169,8 +167,8 @@ function App() {
                 </div>
             </main>
 
-            <footer className="border-t border-slate-300 bg-slate-100 px-4 py-6 text-sm text-slate-700 sm:px-6">
-                <div className="mx-auto flex w-full max-w-[110rem] flex-col gap-2">
+            <footer className="app-footer border-t border-slate-300 px-4 py-6 text-sm text-slate-700 sm:px-6">
+                <div className="app-frame mx-auto flex w-full flex-col gap-2">
                     <p className="font-medium text-slate-900">Free access statement</p>
                     <p>
                         KlinkPPI is provided as a free-access resource. Lab information:{' '}

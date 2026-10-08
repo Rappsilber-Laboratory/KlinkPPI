@@ -329,7 +329,7 @@ def search(
             supported_requests.append(db)
 
     if supported_requests:
-        worker_count = min(6, len(supported_requests))
+        worker_count = min(12, len(supported_requests))
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="klinkppi-search") as executor:
             futures = {
                 executor.submit(resolve_database_safely, db, uniprotkb_id, resolved_tax_id): db

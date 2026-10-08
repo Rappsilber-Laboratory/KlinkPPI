@@ -1,31 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import cytoscape from 'cytoscape'
 import { COLORS, LABELS, filterGraph } from '../collection/analysis'
-import { analysisPDF, cx, download, graphML, networkSVG, sif } from '../collection/exports'
-
-function sourceRanges(edges) {
-    const ranges = new Map()
-    edges.forEach(edge => edge.evidence.forEach(ev => {
-        if (ev.score == null) return
-        const key = `${ev.database}:${ev.score_name}`
-        const range = ranges.get(key) || [ev.score, ev.score]
-        ranges.set(key, [Math.min(range[0], ev.score), Math.max(range[1], ev.score)])
-    }))
-    return ranges
-}
+import { analysisPDF, cx, download, graphML, sif } from '../collection/exports'
+import CollectionNetworkCanvas from './CollectionNetworkCanvas'
 
 export default function CollectionResults({ job }) {
     const [filters, setFilters] = useState({ databases: job.databases, type: 'all', method: '', scoreDatabase: '', minScore: '', minPublications: 0 })
     const [colors, setColors] = useState(true)
     const [widthMode, setWidthMode] = useState('consensus')
     const [labels, setLabels] = useState(true)
+    const [nodeScale, setNodeScale] = useState(1)
     const [detail, setDetail] = useState(null)
     const [calculation, setCalculation] = useState(null)
     const [exportError, setExportError] = useState('')
     const [exportBusy, setExportBusy] = useState(false)
     const [search, setSearch] = useState('')
     const [degreePage, setDegreePage] = useState(0)
-    const container = useRef(null), cyRef = useRef(null)
+    const networkRef = useRef(null)
     const graph = useMemo(() => filterGraph(job.graph, filters), [job.graph, filters])
     const stats = calculation?.graph === graph ? calculation.stats : null
     const calculationError = calculation?.graph === graph ? calculation.error : null
@@ -40,70 +30,24 @@ export default function CollectionResults({ job }) {
         return () => worker.terminate()
     }, [graph, job.databases])
 
-    useEffect(() => {
-        const cy = cytoscape({ container: container.current, elements: [], minZoom: 0.05, maxZoom: 5,
-            hideEdgesOnViewport: true, textureOnViewport: true, pixelRatio: 1,
-            style: [
-                { selector: 'node', style: { 'background-color': '#cbd5e1', 'border-color': '#ffffff', 'border-width': 2, width: 20, height: 20, label: 'data(gene)', 'font-size': 11, color: '#334155', 'text-valign': 'bottom', 'text-margin-y': 5, 'min-zoomed-font-size': 8 } },
-                { selector: 'node.input', style: { 'background-color': '#0f766e', width: 28, height: 28 } },
-                { selector: 'node.unresolved', style: { 'background-color': '#fbbf24', shape: 'diamond' } },
-                { selector: 'edge', style: { 'line-color': 'data(color)', width: 'data(width)', opacity: 0.6, 'curve-style': 'haystack' } },
-                { selector: ':selected', style: { 'border-color': '#0f172a', 'border-width': 4, 'line-color': '#0f172a', opacity: 1 } },
-            ],
-        })
-        cyRef.current = cy
-        const describe = event => setDetail({ kind: event.target.isNode() ? 'node' : 'edge', data: event.target.data() })
-        cy.on('mouseover tap', 'node, edge', describe)
-        const resize = new ResizeObserver(() => { cy.resize(); if (cy.nodes().length && container.current?.clientWidth) cy.fit(undefined, 45) })
-        resize.observe(container.current)
-        return () => { resize.disconnect(); cy.destroy(); cyRef.current = null }
-    }, [])
-
-    useEffect(() => {
-        const cy = cyRef.current
-        const positions = new Map(cy.nodes().map(n => [n.id(), n.position()]))
-        const ranges = sourceRanges(graph.edges)
-        cy.batch(() => {
-            cy.elements().remove()
-            cy.add([
-                ...graph.nodes.map(n => ({ group: 'nodes', data: n, classes: `${n.input ? 'input' : ''} ${n.unresolved ? 'unresolved' : ''}`, ...(positions.has(n.id) ? { position: positions.get(n.id) } : {}) })),
-                ...graph.edges.map(e => {
-                    const relativeScores = e.evidence.filter(ev => ev.score != null).map(ev => {
-                        const [min, max] = ranges.get(`${ev.database}:${ev.score_name}`)
-                        return max === min ? 0.5 : (ev.score - min) / (max - min)
-                    })
-                    const strength = widthMode === 'score' ? (relativeScores.length ? relativeScores.reduce((a, b) => a + b, 0) / relativeScores.length : 0) : e.databases.length / Math.max(1, job.databases.length)
-                    return { group: 'edges', data: { ...e, color: !colors || e.expanded ? '#94a3b8' : e.databases.length > 1 ? '#334155' : COLORS[e.databases[0]], width: widthMode === 'off' ? 1.5 : 1 + strength * 5 } }
-                }),
-            ])
-            cy.style().selector('node').style('label', labels ? 'data(gene)' : '').update()
-        })
-        if (graph.nodes.length && graph.nodes.some(n => !positions.has(n.id))) {
-            const small = graph.nodes.length <= 600 && graph.edges.length <= 3000
-            cy.layout(small ? { name: 'cose', animate: false, randomize: false, numIter: 300, nodeRepulsion: () => 6500, componentSpacing: 90 } : { name: 'circle', animate: false }).run()
-        } else if (graph.nodes.length) cy.fit(undefined, 45)
-    }, [graph, colors, widthMode, labels, job.databases.length])
-
     const exportGraph = async format => {
         setExportError('')
         setExportBusy(true)
         try {
-            const cy = cyRef.current
             if (format === 'json') download(JSON.stringify({ ...graph, analysis: { species: job.species, tax_id: job.tax_id, mode: job.mode, filters, resolution: job.resolution, selections: job.selections, warnings: job.warnings }, statistics: stats }, null, 2), 'klinkppi-network.json')
             if (format === 'graphml') download(graphML(graph), 'klinkppi-network.graphml', 'application/xml')
             if (format === 'sif') download(sif(graph), 'klinkppi-network.sif', 'text/plain')
             if (format === 'cx') download(JSON.stringify(cx(graph, job), null, 2), 'klinkppi-network.cx')
-            if (format === 'svg') download(networkSVG(cy, graph, { colors, widths: widthMode !== 'off' }), 'klinkppi-network.svg', 'image/svg+xml')
-            if (format === 'png') download(await cy.png({ output: 'blob-promise', full: true, bg: '#ffffff', maxWidth: 3000, maxHeight: 2000 }), 'klinkppi-network.png')
-            if (format === 'pdf') await analysisPDF(job, graph, stats, filters, cy)
+            if (format === 'svg') download(networkRef.current.svg(), 'klinkppi-network.svg', 'image/svg+xml')
+            if (format === 'png') download(await networkRef.current.png(), 'klinkppi-network.png')
+            if (format === 'pdf') await analysisPDF(job, graph, stats, filters, { png: () => networkRef.current.pngDataURL() })
         } catch (error) { setExportError(`Export failed: ${error.message}`) }
         finally { setExportBusy(false) }
     }
     const focus = () => {
         const query = search.trim().toLowerCase()
-        const matches = cyRef.current.nodes().filter(n => n.id().toLowerCase() === query || n.data('gene').toLowerCase() === query)
-        cyRef.current.elements().unselect()
-        if (matches.length) { matches.select(); cyRef.current.fit(matches.closedNeighborhood(), 70); setDetail({ kind: 'node', data: matches[0].data() }) }
+        const matched = networkRef.current.focus(query)
+        if (matched) setExportError('')
         else setExportError(`No visible node matches '${search}'.`)
     }
     const resolutionCount = Object.values(job.selections).filter(Boolean).length
@@ -124,16 +68,17 @@ export default function CollectionResults({ job }) {
                     <label>Score threshold source<select value={filters.scoreDatabase} onChange={e => { update('scoreDatabase', e.target.value); update('minScore', '') }}><option value="">No score threshold</option>{scoreDBs.map(db => <option key={db}>{db}</option>)}</select></label>
                     {filters.scoreDatabase && <label>Minimum raw source score<input type="number" step="any" value={filters.minScore} onChange={e => update('minScore', e.target.value)} placeholder="No minimum" /></label>}
                     <p className="collection-note">A score threshold removes evidence only from that source. Other selected sources can still support the pair. Missing publication or method data are unknown.</p>
-                    <details><summary>Appearance</summary><label className="source-toggle"><input type="checkbox" checked={colors} onChange={e => setColors(e.target.checked)} />Database edge colors</label><label className="source-toggle"><input type="checkbox" checked={labels} onChange={e => setLabels(e.target.checked)} />Gene labels</label><label>Edge width<select value={widthMode} onChange={e => setWidthMode(e.target.value)}><option value="consensus">Database consensus count</option><option value="score">Relative source scores</option><option value="off">Uniform width</option></select></label><p className="collection-note">Relative widths scale each source score within its visible range, then average. They are visual cues, not comparable probabilities.</p></details>
+                    <details><summary>Appearance</summary><label className="source-toggle"><input type="checkbox" checked={colors} onChange={e => setColors(e.target.checked)} />Database edge colors</label><label className="source-toggle"><input type="checkbox" checked={labels} onChange={e => setLabels(e.target.checked)} />Gene labels</label><label>Node size <output>{Math.round(nodeScale * 100)}%</output><input type="range" min="0.5" max="2.5" step="0.1" value={nodeScale} onChange={e => setNodeScale(Number(e.target.value))} /></label><label>Edge width<select value={widthMode} onChange={e => setWidthMode(e.target.value)}><option value="consensus">Database consensus count</option><option value="score">Relative source scores</option><option value="off">Uniform width</option></select></label><p className="collection-note">Drag any node to reposition it. Click an edge to open its evidence; moving near an edge does not select it.</p></details>
                 </aside>
-                <div className="network-main"><div className="network-toolbar"><div><input aria-label="Find network node" placeholder="Find gene / UniProt…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') focus() }} /><button onClick={focus} disabled={!graph.nodes.length}>Find</button></div><div><button onClick={() => cyRef.current.fit(undefined, 45)}>Fit</button><button onClick={() => cyRef.current.layout({ name: graph.nodes.length <= 600 ? 'cose' : 'circle', animate: false, numIter: 300 }).run()}>Rearrange</button></div></div>
-                    <div className="network-canvas" ref={container} aria-label="Interactive protein interaction network" />
+                <div className="network-main"><div className="network-toolbar"><div><input aria-label="Find network node" placeholder="Find gene / UniProt…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') focus() }} /><button onClick={focus} disabled={!graph.nodes.length}>Find</button></div><div><button onClick={() => networkRef.current.fit()}>Fit</button><button onClick={() => networkRef.current.rearrange()}>Rearrange</button><button onClick={e => { const separated = networkRef.current.separate(); e.currentTarget.textContent = separated ? 'Compact communities' : 'Separate communities' }}>Separate communities</button></div></div>
+                    <div className="network-detail" aria-live="polite"><div className="network-detail-heading"><span>{shownDetail?.kind === 'edge' ? 'INTERACTION EVIDENCE' : 'PROTEIN INSPECTOR'}</span><strong>{shownDetail ? shownDetail.kind === 'node' ? shownDetail.data.gene : `${shownDetail.data.source} ↔ ${shownDetail.data.target}` : 'Select a protein or interaction'}</strong></div><div className="network-detail-content">{!shownDetail ? <p>Click a node or edge to inspect its details.</p> : shownDetail.kind === 'node' ? <><p>{shownDetail.data.unresolved ? 'Unresolved / skipped input — no connections' : `UniProt: ${shownDetail.data.id}`} · {shownDetail.data.species} · Taxonomy {shownDetail.data.tax_id}</p>{stats && <p>Degree: {stats.degrees.find(n => n.id === shownDetail.data.id)?.degree ?? 0}</p>}</> : <><div className="evidence-chips">{shownDetail.data.databases.map(db => <span key={db} style={{ borderColor: COLORS[db], color: COLORS[db] }}>{LABELS[db] || db}</span>)}</div><div className="collection-table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Score</th><th>Publications</th><th>Methods / direction</th></tr></thead><tbody>{shownDetail.data.evidence.map((ev, i) => <tr key={i}><td>{/^https?:\/\//.test(ev.link) ? <a href={ev.link} target="_blank" rel="noreferrer">{ev.database}</a> : ev.database}</td><td>{ev.type}<small>{ev.interaction_type}</small></td><td>{ev.score == null ? 'Unknown' : Object.entries(ev.scores || { [ev.score_name]: ev.score }).map(([key, value]) => `${key}: ${value}`).join('; ')}</td><td>{ev.publications.join(', ') || 'Unknown'}</td><td>{ev.methods.join(', ') || 'Unknown'}{ev.directed && <small>{ev.regulator} → {ev.target} · {ev.effect}</small>}</td></tr>)}</tbody></table></div></>}</div></div>
+                    <div className="network-meta"><span>{graph.nodes.length.toLocaleString()} nodes</span><span>{graph.edges.length.toLocaleString()} edges</span><span>{new Set(graph.edges.flatMap(e => e.databases)).size} sources</span><span>{stats?.components.length ?? '—'} groups</span></div>
+                    <div className="network-canvas"><CollectionNetworkCanvas ref={networkRef} graph={graph} colors={colors} widthMode={widthMode} labels={labels} nodeScale={nodeScale} onPick={setDetail} /></div>
                     {!graph.edges.length && <p className="network-empty">No interactions match this mode and the current filters. Input proteins remain visible as isolated nodes.</p>}
-                    <div className="network-legend"><span><i style={{ background: '#0f766e' }} />Input protein</span><span><i style={{ background: '#cbd5e1' }} />First neighbor</span><span><i style={{ background: '#fbbf24' }} />Unresolved / skipped</span><span>Gray edges: first-neighbor connections · Dark edges: shared sources</span></div>
+                    <div className="network-legend"><span><i style={{ background: '#ff775f' }} />Input protein</span><span><i style={{ background: '#66e3b4' }} />First neighbor</span><span><i style={{ background: '#d9ff43' }} />Unresolved / skipped</span><span>Muted edges: first-neighbor connections · Acid edges: shared sources</span></div>
                     <p className="collection-note">Drag nodes, scroll to zoom, and hover or tap for evidence. Large networks use a circle layout to keep interaction responsive.</p>
                 </div>
             </div>
-            <div className="network-detail" aria-live="polite">{!shownDetail ? <p>Hover or tap a node or edge to inspect its details.</p> : shownDetail.kind === 'node' ? <><h3>{shownDetail.data.gene}</h3><p>{shownDetail.data.unresolved ? 'Unresolved / skipped input — no connections' : `UniProt: ${shownDetail.data.id}`} · {shownDetail.data.species} · Taxonomy {shownDetail.data.tax_id}</p>{stats && <p>Degree: {stats.degrees.find(n => n.id === shownDetail.data.id)?.degree ?? 0}</p>}</> : <><h3>{shownDetail.data.source} ↔ {shownDetail.data.target}</h3><div className="evidence-chips">{shownDetail.data.databases.map(db => <span key={db} style={{ borderColor: COLORS[db], color: COLORS[db] }}>{LABELS[db] || db}</span>)}</div><div className="collection-table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Score</th><th>Publications</th><th>Methods / direction</th></tr></thead><tbody>{shownDetail.data.evidence.map((ev, i) => <tr key={i}><td>{/^https?:\/\//.test(ev.link) ? <a href={ev.link} target="_blank" rel="noreferrer">{ev.database}</a> : ev.database}</td><td>{ev.type}<small>{ev.interaction_type}</small></td><td>{ev.score == null ? 'Unknown' : Object.entries(ev.scores || { [ev.score_name]: ev.score }).map(([key, value]) => `${key}: ${value}`).join('; ')}</td><td>{ev.publications.join(', ') || 'Unknown'}</td><td>{ev.methods.join(', ') || 'Unknown'}{ev.directed && <small>{ev.regulator} → {ev.target} · {ev.effect}</small>}</td></tr>)}</tbody></table></div></>}</div>
             <div className="collection-actions"><span>Export filtered network:</span>{['svg', 'png', 'graphml', 'sif', 'cx', 'json'].map(format => <button key={format} onClick={() => exportGraph(format)} disabled={exportBusy || (['svg', 'png'].includes(format) && !graph.nodes.length)}>{format.toUpperCase()}</button>)}</div>
             {exportError && <p className="collection-error" role="alert">{exportError}</p>}
         </div>

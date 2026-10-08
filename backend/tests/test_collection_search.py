@@ -132,6 +132,29 @@ class NetworkTests(unittest.TestCase):
         rows, _, _ = cs.extract_rows('String', [{'info': {}}, {'Direct_Interactions': [{'Interactor_A': 'a'}]}, {'Indirect_Interactions': [{'Interactor_A': 'b'}]}])
         self.assertEqual(rows, [{'Interactor_A': 'a'}])
 
+    def test_string_gene_labels_map_to_collection_accessions(self):
+        sos = candidate('Q07889', 'SOS1')
+        egfr = candidate('P00533', 'EGFR')
+        seeds = {item['id']: item for item in (sos, egfr)}
+        canonical = {}
+        for item in (sos, egfr):
+            for alias in (item['id'], item['gene'], *item['gene_names']):
+                canonical[cs.canonical_key(alias)] = item
+        records = [('String', sos['id'], {
+            'Interactor_A': 'EGFR', 'Interactor_B_UniProt': sos['id'],
+            'combined_score': 0.999, 'organism_tax_id': '9606',
+        }, {})]
+        graph = cs.build_graph(seeds, records, canonical, 'induced', '9606', 'Homo sapiens', [])
+        self.assertEqual(len(graph['edges']), 1)
+        self.assertEqual({graph['edges'][0]['source'], graph['edges'][0]['target']}, {'P00533', 'Q07889'})
+        self.assertEqual(graph['edges'][0]['evidence'][0]['database'], 'String')
+
+    def test_endpoint_prefers_one_reviewed_record_over_unreviewed_fragments(self):
+        reviewed = candidate('P00533', 'EGFR')
+        fragment = {**candidate('A0A000', 'EGFR'), 'reviewed': False}
+        self.assertEqual(cs.endpoint_candidate([fragment, reviewed])['id'], 'P00533')
+        self.assertIsNone(cs.endpoint_candidate([reviewed, candidate('Q99999', 'EGFR')]))
+
     def test_edge_cap_is_reported(self):
         with patch.object(cs, 'MAX_EDGES', 1):
             graph = cs.build_graph(self.seeds, self.records, self.canonical, 'expanded', '9606', 'Homo sapiens', [])

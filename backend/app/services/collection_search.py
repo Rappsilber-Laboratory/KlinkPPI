@@ -157,7 +157,8 @@ def create_job(tokens, tax_id, species, databases, input_type, mode, resolver):
         JOBS[job_id] = {"job_id": job_id, "created_at": now, "tax_id": tax_id, "species": species,
                         "databases": databases, "mode": mode, "status": "resolving", "progress": "Resolving identifiers…",
                         "tokens": tokens, "input_type": input_type, "cancel": Event(), "resolver": resolver,
-                        "resolution": [], "warnings": [], "graph": None}
+                        "resolution": [], "warnings": [], "graph": None,
+                        "database_statuses": {db: {"status": "pending", "completed": 0, "total": 0, "errors": 0} for db in databases}}
     POOL.submit(_resolve_job, job_id)
     return snapshot(job_id)
 
@@ -220,6 +221,24 @@ def numeric(value):
         return None
 
 
+def canonical_key(value):
+    """Normalize resolver endpoint labels without changing the displayed ID."""
+    return clean(value).upper()
+
+
+def endpoint_candidate(candidates):
+    """Choose an endpoint only when UniProt provides an unambiguous primary record.
+
+    STRING returns preferred gene symbols rather than UniProt accessions. A symbol
+    commonly matches one reviewed record plus several unreviewed fragments, so
+    requiring exactly one result drops otherwise valid STRING interactions.
+    """
+    if len(candidates) == 1:
+        return candidates[0]
+    reviewed = [candidate for candidate in candidates if candidate["reviewed"]]
+    return reviewed[0] if len(reviewed) == 1 else None
+
+
 def evidence(db, row, info):
     score_key = next((key for key in ("combined_score", "Interaction_Score_Intact", "Confidence_Score", "spoc_score") if numeric(row.get(key)) is not None), None)
     kind = "functional" if db in {"String", "Reactome", "Corum", "ComplexPortal"} else "predicted" if db in {"Predictomes", "HuMap"} else "direct"
@@ -265,7 +284,7 @@ def build_graph(seeds, records, canonical, mode, tax_id, species, unresolved):
             continue
         a = clean(row.get("Interactor_A_UniProt") or row.get("Interactor_A"))
         b = clean(row.get("Interactor_B_UniProt") or row.get("Interactor_B"))
-        ca, cb = canonical.get(a), canonical.get(b)
+        ca, cb = canonical.get(canonical_key(a)), canonical.get(canonical_key(b))
         if not ca or not cb:
             unknown_pairs += 1
             continue
@@ -304,45 +323,58 @@ def _network_job(job_id):
             candidate = next((c for c in row["candidates"] if c["id"] == selected), None)
             if candidate:
                 seeds[candidate["id"]] = candidate
-                canonical[row["input"]] = candidate
-                canonical[candidate["id"]] = candidate
+                # Database adapters use a mixture of accessions and preferred
+                # gene symbols. Index every validated alias up front so STRING
+                # edges among collection inputs do not depend on a second,
+                # potentially multi-hit gene lookup.
+                for alias in (row["input"], candidate["id"], candidate["gene"], *candidate["gene_names"]):
+                    canonical[canonical_key(alias)] = candidate
             else:
                 unresolved.append(row["input"])
         warnings, records = [], []
-        tasks = [(db, seed) for db in job["databases"] for seed in seeds]
-        # Keep only six database lookups in flight, and bounded retained evidence.
-        with ThreadPoolExecutor(max_workers=6, thread_name_prefix="collection-db") as executor:
-            for offset in range(0, len(tasks), 6):
+        # Interleave databases so every selected source starts promptly instead
+        # of filling the pool with one source's seeds first.
+        tasks = [(db, seed) for seed in seeds for db in job["databases"]]
+        database_statuses = {db: {"status": "running" if seeds else "completed", "completed": 0, "total": len(seeds), "errors": 0} for db in job["databases"]}
+        patch(job_id, database_statuses=deepcopy(database_statuses))
+        with ThreadPoolExecutor(max_workers=min(12, len(tasks) or 1), thread_name_prefix="collection-db") as executor:
+            futures = {executor.submit(job["resolver"], db, seed, job["tax_id"]): (db, seed) for db, seed in tasks}
+            for completed_count, future in enumerate(as_completed(futures), 1):
                 if job["cancel"].is_set():
                     return
-                futures = {executor.submit(job["resolver"], db, seed, job["tax_id"]): (db, seed) for db, seed in tasks[offset:offset + 6]}
-                for future in as_completed(futures):
-                    db, seed = futures[future]
-                    try:
-                        rows, info, error = extract_rows(db, future.result())
-                        if info.get("Overlap_Warning") and info["Overlap_Warning"] not in warnings:
-                            warnings.append(info["Overlap_Warning"])
-                        if error:
-                            warnings.append(f"{db} / {seed}: {error}")
-                        room = max(0, MAX_EDGES * 4 - len(records))
-                        records.extend((db, seed, {**row, "Interactor_B_UniProt": seed} if db == "String" else row, info) for row in rows[:room])
-                        if len(rows) > room and "Evidence row limit reached; analysis is partial." not in warnings:
-                            warnings.append("Evidence row limit reached; analysis is partial.")
-                    except Exception as exc:
-                        warnings.append(f"{db} / {seed}: {exc}")
-                patch(job_id, progress=f"Queried {min(offset + 6, len(tasks))} / {len(tasks)} protein/database combinations", warnings=warnings.copy())
+                db, seed = futures[future]
+                try:
+                    rows, info, error = extract_rows(db, future.result())
+                    if info.get("Overlap_Warning") and info["Overlap_Warning"] not in warnings:
+                        warnings.append(info["Overlap_Warning"])
+                    if error:
+                        warnings.append(f"{db} / {seed}: {error}")
+                        database_statuses[db]["errors"] += 1
+                    room = max(0, MAX_EDGES * 4 - len(records))
+                    records.extend((db, seed, {**row, "Interactor_B_UniProt": seed} if db == "String" else row, info) for row in rows[:room])
+                    if len(rows) > room and "Evidence row limit reached; analysis is partial." not in warnings:
+                        warnings.append("Evidence row limit reached; analysis is partial.")
+                except Exception as exc:
+                    warnings.append(f"{db} / {seed}: {exc}")
+                    database_statuses[db]["errors"] += 1
+                database_statuses[db]["completed"] += 1
+                if database_statuses[db]["completed"] >= database_statuses[db]["total"]:
+                    database_statuses[db]["status"] = "failed" if database_statuses[db]["errors"] else "completed"
+                patch(job_id, database_statuses=deepcopy(database_statuses),
+                      progress=f"Queried {completed_count} / {len(tasks)} protein/database combinations", warnings=warnings.copy())
         if job["cancel"].is_set():
             return
         endpoint_ids = list(dict.fromkeys(clean(row.get(f"Interactor_{side}_UniProt") or row.get(f"Interactor_{side}")) for _, _, row, _ in records for side in ("A", "B")))
-        missing = [token for token in endpoint_ids if token and token not in canonical]
+        missing = [token for token in endpoint_ids if token and canonical_key(token) not in canonical]
         if len(missing) > MAX_ENDPOINTS:
             warnings.append(f"Interactor validation capped at {MAX_ENDPOINTS:,} IDs; analysis is partial.")
             missing = missing[:MAX_ENDPOINTS]
         patch(job_id, progress=f"Validating {len(missing)} interactor IDs against the selected species…")
         matches, errors = resolve_tokens(missing, job["tax_id"], cancel=job["cancel"])
         for token, candidates in matches.items():
-            if len(candidates) == 1:
-                canonical[token] = candidates[0]
+            candidate = endpoint_candidate(candidates)
+            if candidate:
+                canonical[canonical_key(token)] = candidate
         if errors:
             warnings.append(f"Interactor ID lookup failed for {len(errors)} identifiers; affected evidence is excluded.")
         if job["cancel"].is_set():

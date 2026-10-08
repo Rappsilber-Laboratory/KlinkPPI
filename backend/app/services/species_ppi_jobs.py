@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from itertools import combinations
 from pathlib import Path
@@ -305,6 +306,33 @@ def iter_species_database_rows(db_name: str, tax_id: str) -> Iterator[dict]:
         yield from _iter_corum_species_rows(tax_id)
 
 
+def _run_species_database(job_id: str, db_name: str, tax_id: str, supported_databases: set[str]) -> None:
+    _raise_if_cancelled(job_id)
+    if db_name not in supported_databases:
+        _set_job_status(job_id, db_name, status="not_supported", message=f"{db_name} does not support taxonomy ID {tax_id}", pair_count=0)
+        return
+    if db_name not in SUPPORTED_COMPLETE_SPECIES_DATABASES:
+        _set_job_status(job_id, db_name, status="not_available", message="Complete-species export is not implemented for this database yet", pair_count=0)
+        return
+    _set_job_status(job_id, db_name, status="running", message=f"{db_name} is processing")
+    try:
+        if db_name == "String":
+            rows = ensure_string_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
+        elif db_name == "IntAct":
+            rows = ensure_intact_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
+        elif db_name == "HuMap":
+            rows = ensure_humap_bundle(tax_id)
+        else:
+            rows = _build_species_database_rows(db_name, tax_id)
+            _raise_if_cancelled(job_id)
+    except SpeciesRemoteDataNotFound:
+        _set_job_status(job_id, db_name, status="not_available", message=f"{db_name} species file was not found for taxonomy ID {tax_id}", pair_count=0)
+        return
+    with JOBS_LOCK:
+        JOBS[job_id]["data"][db_name] = rows
+    _set_job_status(job_id, db_name, status="completed", message=f"{db_name} finished", pair_count=rows.get("pair_count", 0) if isinstance(rows, dict) else len(rows))
+
+
 def _run_species_job(job_id: str) -> None:
     with JOBS_LOCK:
         job = JOBS[job_id]
@@ -313,60 +341,16 @@ def _run_species_job(job_id: str) -> None:
         supported_databases = set(get_supported_databases(tax_id))
 
     try:
-        for db_name in selected_databases:
-            _raise_if_cancelled(job_id)
-            if db_name not in supported_databases:
-                _set_job_status(
-                    job_id,
-                    db_name,
-                    status="not_supported",
-                    message=f"{db_name} does not support taxonomy ID {tax_id}",
-                    pair_count=0,
-                )
-                continue
-
-            if db_name not in SUPPORTED_COMPLETE_SPECIES_DATABASES:
-                _set_job_status(
-                    job_id,
-                    db_name,
-                    status="not_available",
-                    message="Complete-species export is not implemented for this database yet",
-                    pair_count=0,
-                )
-                continue
-
-            _set_job_status(job_id, db_name, status="running", message=f"{db_name} is processing")
-            try:
-                if db_name == "String":
-                    rows = ensure_string_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
-                elif db_name == "IntAct":
-                    rows = ensure_intact_species_bundle(tax_id, cancel_requested=lambda: _is_cancel_requested(job_id))
-                elif db_name == "HuMap":
-                    rows = ensure_humap_bundle(tax_id)
-                else:
-                    rows = _build_species_database_rows(db_name, tax_id)
-                    _raise_if_cancelled(job_id)
-            except SpeciesRemoteDataNotFound:
-                _set_job_status(
-                    job_id,
-                    db_name,
-                    status="not_available",
-                    message=f"{db_name} species file was not found for taxonomy ID {tax_id}",
-                    pair_count=0,
-                )
-                continue
-
-            with JOBS_LOCK:
-                JOBS[job_id]["data"][db_name] = rows
-
-            _set_job_status(
-                job_id,
-                db_name,
-                status="completed",
-                message=f"{db_name} finished",
-                pair_count=rows.get("pair_count", 0) if isinstance(rows, dict) else len(rows),
-            )
-
+        with ThreadPoolExecutor(max_workers=min(12, len(selected_databases) or 1), thread_name_prefix="species-db") as executor:
+            futures = {executor.submit(_run_species_database, job_id, db, tax_id, supported_databases): db for db in selected_databases}
+            for future in as_completed(futures):
+                db_name = futures[future]
+                try:
+                    future.result()
+                except SpeciesJobCancelled:
+                    raise
+                except Exception as exc:
+                    _set_job_status(job_id, db_name, status="failed", message=str(exc), pair_count=0)
         _mark_job_complete(job_id, success=True)
     except SpeciesJobCancelled:
         for db_name in selected_databases:
