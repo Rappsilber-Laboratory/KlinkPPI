@@ -22,15 +22,15 @@ export function filterGraph(graph, filters) {
     const edges = []
     const activeNodes = new Set(graph.nodes.filter(n => n.input).map(n => n.id))
     for (const edge of graph.edges) {
-        const evidence = edge.evidence.filter(ev => {
+        const evidence = (edge.evidence || []).filter(ev => {
             if (!filters.databases.includes(ev.database)) return false
             if (filters.type !== 'all' && filters.type !== ev.type) return false
-            if (filters.method && !ev.methods.some(method => method.toLowerCase().includes(filters.method.toLowerCase()))) return false
+            if (filters.method && !(ev.methods || []).some(method => String(method).toLowerCase().includes(filters.method.toLowerCase()))) return false
             // Raw thresholds are applied only within a chosen database's scale.
             if (filters.scoreDatabase && ev.database === filters.scoreDatabase && filters.minScore !== '' && (ev.score == null || ev.score < Number(filters.minScore))) return false
             return true
         })
-        const publications = [...new Set(evidence.flatMap(ev => ev.publications))]
+        const publications = [...new Set(evidence.flatMap(ev => ev.publications || []))]
         if (!evidence.length || publications.length < Number(filters.minPublications || 0)) continue
         activeNodes.add(edge.source)
         activeNodes.add(edge.target)

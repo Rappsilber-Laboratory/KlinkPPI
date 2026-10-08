@@ -30,6 +30,12 @@ test('filters preserve isolated inputs and remove orphan neighbors', () => {
     assert.deepEqual(graph.nodes.map(n => n.id), ['A', 'B', 'unknown:0'])
 })
 
+test('filters tolerate incomplete optional evidence arrays', () => {
+    const graph = filterGraph({ nodes: nodes.slice(0, 2), edges: [{ id: 'e0', source: 'A', target: 'B', evidence: [{ database: 'IntAct', type: 'direct' }] }] }, defaults)
+    assert.equal(graph.edges.length, 1)
+    assert.deepEqual(graph.edges[0].publications, [])
+})
+
 test('score filtering respects source scales, retaining independent evidence', () => {
     const graph = filterGraph(rawGraph, { ...defaults, scoreDatabase: 'IntAct', minScore: .9 })
     assert.equal(graph.edges.length, 2)

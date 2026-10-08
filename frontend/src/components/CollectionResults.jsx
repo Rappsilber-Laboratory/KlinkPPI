@@ -3,8 +3,15 @@ import { COLORS, LABELS, filterGraph } from '../collection/analysis'
 import { analysisPDF, cx, download, graphML, sif } from '../collection/exports'
 import CollectionNetworkCanvas from './CollectionNetworkCanvas'
 
+const EMPTY_GRAPH = { nodes: [], edges: [] }
+
 export default function CollectionResults({ job }) {
-    const [filters, setFilters] = useState({ databases: job.databases, type: 'all', method: '', scoreDatabase: '', minScore: '', minPublications: 0 })
+    const databases = useMemo(() => Array.isArray(job.databases) ? job.databases : [], [job.databases])
+    const rawGraph = useMemo(() => job.graph && Array.isArray(job.graph.nodes) && Array.isArray(job.graph.edges) ? job.graph : EMPTY_GRAPH, [job.graph])
+    const tokens = Array.isArray(job.tokens) ? job.tokens : []
+    const warnings = Array.isArray(job.warnings) ? job.warnings : []
+    const selections = job.selections && typeof job.selections === 'object' ? job.selections : {}
+    const [filters, setFilters] = useState({ databases, type: 'all', method: '', scoreDatabase: '', minScore: '', minPublications: 0 })
     const [colors, setColors] = useState(true)
     const [widthMode, setWidthMode] = useState('consensus')
     const [labels, setLabels] = useState(true)
@@ -16,19 +23,19 @@ export default function CollectionResults({ job }) {
     const [search, setSearch] = useState('')
     const [degreePage, setDegreePage] = useState(0)
     const networkRef = useRef(null)
-    const graph = useMemo(() => filterGraph(job.graph, filters), [job.graph, filters])
+    const graph = useMemo(() => filterGraph(rawGraph, filters), [rawGraph, filters])
     const stats = calculation?.graph === graph ? calculation.stats : null
     const calculationError = calculation?.graph === graph ? calculation.error : null
-    const scoreDBs = useMemo(() => [...new Set(job.graph.edges.flatMap(e => e.evidence.filter(ev => ev.score != null).map(ev => ev.database)))], [job.graph])
+    const scoreDBs = useMemo(() => [...new Set(rawGraph.edges.flatMap(e => (e.evidence || []).filter(ev => ev.score != null).map(ev => ev.database)))], [rawGraph])
     const update = (key, value) => setFilters(current => ({ ...current, [key]: value }))
 
     useEffect(() => {
         const worker = new Worker(new URL('../collection/statistics.worker.js', import.meta.url), { type: 'module' })
         worker.onmessage = ({ data }) => setCalculation({ graph, ...data })
         worker.onerror = () => setCalculation({ graph, error: 'Statistics could not be calculated.' })
-        worker.postMessage({ graph, databases: job.databases })
+        worker.postMessage({ graph, databases })
         return () => worker.terminate()
-    }, [graph, job.databases])
+    }, [graph, databases])
 
     const exportGraph = async format => {
         setExportError('')
@@ -50,18 +57,18 @@ export default function CollectionResults({ job }) {
         if (matched) setExportError('')
         else setExportError(`No visible node matches '${search}'.`)
     }
-    const resolutionCount = Object.values(job.selections).filter(Boolean).length
+    const resolutionCount = Object.values(selections).filter(Boolean).length
     const visibleDetail = detail && { ...detail, data: (detail.kind === 'node' ? graph.nodes : graph.edges).find(item => item.id === detail.data.id) }
     const shownDetail = visibleDetail?.data ? visibleDetail : null
     const page = Math.min(degreePage, Math.max(0, Math.ceil((stats?.degrees.length || 0) / 100) - 1))
     return <>
-        {job.warnings.length > 0 && <div className="collection-card collection-warning" role="status"><h3>Coverage notes</h3><ul>{job.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
+        {warnings.length > 0 && <div className="collection-card collection-warning" role="status"><h3>Coverage notes</h3><ul>{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></div>}
         <div className="collection-card">
             <div className="collection-job-heading"><div><span className="collection-eyebrow">EVIDENCE EXPLORER</span><h2>Your interaction network</h2></div><button onClick={() => exportGraph('pdf')} disabled={!stats || exportBusy} className="collection-primary">Download analysis PDF</button></div>
-            <div className="collection-metrics">{[[job.tokens.length, 'Input IDs'], [resolutionCount, 'Resolved / selected'], [job.tokens.length - resolutionCount, 'Unresolved / skipped'], [graph.nodes.length, 'Visible nodes'], [graph.edges.length, 'Visible edges']].map(([value, label]) => <div key={label}><strong>{value.toLocaleString()}</strong><span>{label}</span></div>)}</div>
+            <div className="collection-metrics">{[[tokens.length, 'Input IDs'], [resolutionCount, 'Resolved / selected'], [Math.max(0, tokens.length - resolutionCount), 'Unresolved / skipped'], [graph.nodes.length, 'Visible nodes'], [graph.edges.length, 'Visible edges']].map(([value, label]) => <div key={label}><strong>{value.toLocaleString()}</strong><span>{label}</span></div>)}</div>
             <div className="network-workspace">
                 <aside className="network-controls">
-                    <fieldset><legend>Source databases</legend>{job.databases.map(db => <label className="source-toggle" key={db}><input type="checkbox" checked={filters.databases.includes(db)} onChange={e => update('databases', e.target.checked ? [...filters.databases, db] : filters.databases.filter(value => value !== db))} /><span className="source-dot" style={{ background: COLORS[db] }} />{LABELS[db] || db}</label>)}</fieldset>
+                    <fieldset><legend>Source databases</legend>{databases.map(db => <label className="source-toggle" key={db}><input type="checkbox" checked={filters.databases.includes(db)} onChange={e => update('databases', e.target.checked ? [...filters.databases, db] : filters.databases.filter(value => value !== db))} /><span className="source-dot" style={{ background: COLORS[db] }} />{LABELS[db] || db}</label>)}</fieldset>
                     <label>Evidence category<select value={filters.type} onChange={e => update('type', e.target.value)}><option value="all">All categories</option><option value="direct">Direct / physical</option><option value="functional">Functional / co-membership</option><option value="predicted">Predicted</option></select></label>
                     <label>Minimum known publications<input type="number" min="0" step="1" value={filters.minPublications} onChange={e => update('minPublications', Math.max(0, Number(e.target.value)))} /></label>
                     <label>Experimental method<input placeholder="e.g. two hybrid" value={filters.method} onChange={e => update('method', e.target.value)} /></label>

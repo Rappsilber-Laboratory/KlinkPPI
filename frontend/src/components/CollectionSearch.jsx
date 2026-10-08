@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DATABASES, LABELS, parseIdentifiers } from '../collection/analysis'
 import CollectionResults from './CollectionResults'
+import CollectionResultsBoundary from './CollectionResultsBoundary'
 import '../collection/collection.css'
 
 const API = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
@@ -146,6 +147,6 @@ export default function CollectionSearch() {
             <div className="collection-table-wrap"><table><thead><tr><th>Input</th><th>Status</th><th>UniProt mapping</th></tr></thead><tbody>{job.resolution.map(row => <tr key={row.input}><td>{row.input}<small>{row.input_type}</small></td><td>{row.status}</td><td>{row.candidates.length > 1 ? <select aria-label={`Mapping for ${row.input}`} value={choices[row.input] ?? '__choose__'} onChange={e => setChoices(current => ({ ...current, [row.input]: e.target.value || null }))}><option value="__choose__" disabled>Choose a match…</option><option value="">Skip this ID</option>{row.candidates.map(c => <option value={c.id} key={c.id}>{c.gene} · {c.id} · {c.reviewed ? 'reviewed' : 'unreviewed'}</option>)}</select> : row.candidates.length === 1 ? `${row.candidates[0].gene} · ${row.candidates[0].id}` : row.error || 'No match in the selected species'}</td></tr>)}</tbody></table></div>
             <button className="collection-primary" type="button" onClick={run} disabled={pending || undecided}>Run {job.mode} analysis</button>
         </div>}
-        {job?.status === 'completed' && <CollectionResults key={job.job_id} job={job} />}
+        {job?.status === 'completed' && <CollectionResultsBoundary jobId={job.job_id}><CollectionResults job={job} /></CollectionResultsBoundary>}
     </section>
 }
