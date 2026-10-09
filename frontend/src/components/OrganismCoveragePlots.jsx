@@ -9,6 +9,12 @@ const DATABASE_STYLES = {
   Corum: { label: 'CORUM', color: '#d97706' },
   Predictomes: { label: 'Predictomes', color: '#4f46e5' },
   HuRI: { label: 'HuRI', color: '#e11d48' },
+  ComplexPortal: { label: 'Complex Portal', color: '#0e7490' },
+  Reactome: { label: 'Reactome', color: '#4d7c0f' },
+  Signor: { label: 'SIGNOR', color: '#b91c1c' },
+  Hippie: { label: 'HIPPIE', color: '#0f766e' },
+  HuMap: { label: 'hu.MAP', color: '#6d28d9' },
+  Mint: { label: 'MINT', color: '#be185d' },
 }
 
 const formatCount = (value) => new Intl.NumberFormat().format(value || 0)
@@ -65,7 +71,7 @@ const OrganismCoveragePlots = () => {
   }, [summary])
 
   const maxCount = Math.max(...databaseCounts.map((item) => item.count), 1)
-  const chartWidth = 520
+  const chartWidth = Math.max(520, databaseCounts.length * 82)
   const chartHeight = 260
   const plotTop = 28
   const plotBottom = 42
@@ -76,9 +82,9 @@ const OrganismCoveragePlots = () => {
   const barWidth = Math.min(48, barSlot * 0.58)
 
   return (
-    <section className="bg-slate-100 px-4 pb-8 sm:px-6">
+    <section className="coverage-section px-4 sm:px-6">
       {error ? (
-        <div className="mx-auto w-full max-w-[110rem] rounded-lg border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
+        <div className="app-frame mx-auto w-full rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm">
           <h2 className="text-base font-semibold">Supported organism plots could not load</h2>
           <p className="mt-1 text-sm">
             The app could not reach <span className="font-mono">{API_BASE_URL}/supported-organisms/summary</span>.
@@ -99,15 +105,16 @@ const OrganismCoveragePlots = () => {
       ) : null}
 
       {!error ? (
-      <div className="mx-auto grid w-full max-w-[110rem] gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="app-frame mx-auto grid grid-cols-1 w-full gap-4 lg:grid-cols-2">
+        <div className="coverage-card min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4">
             <h2 className="text-base font-semibold text-slate-900">Supported Taxon IDs by database</h2>
             <p className="text-sm text-slate-500">Count of unique organisms listed in each source file</p>
           </div>
 
           {summary ? (
-            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Histogram of supported Taxon IDs by database" className="h-[20rem] w-full">
+            <div className="overflow-x-auto">
+            <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} role="img" aria-label="Histogram of supported Taxon IDs by database" className="h-[20rem] max-w-none" style={{ width: `${chartWidth}px`, minWidth: '100%' }}>
               <line x1={plotLeft} y1={plotTop} x2={plotLeft} y2={chartHeight - plotBottom} stroke="#cbd5e1" />
               <line x1={plotLeft} y1={chartHeight - plotBottom} x2={chartWidth - plotRight} y2={chartHeight - plotBottom} stroke="#cbd5e1" />
               <text x={plotLeft - 8} y={plotTop + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
@@ -148,6 +155,7 @@ const OrganismCoveragePlots = () => {
                 )
               })}
             </svg>
+            </div>
           ) : (
             <div className="flex h-[20rem] items-center justify-center text-sm text-slate-500">
               Loading database counts...
@@ -155,7 +163,7 @@ const OrganismCoveragePlots = () => {
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="coverage-card min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-end justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-slate-900">Exact overlaps</h2>

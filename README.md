@@ -1,6 +1,6 @@
 # KlinkPPI
 
-KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, and `Predictomes`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
+KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, `Predictomes`, `Complex Portal`, `Reactome`, `SIGNOR`, `HIPPIE`, `hu.MAP 3.0`, and `MINT`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
 
 ## Features
 
@@ -85,6 +85,26 @@ Then open:
 
 ```text
 http://localhost:5174
+```
+
+### Extended database data
+
+Complex Portal species files are cached automatically on first use. Reactome and MINT are queried through their PSICQUIC services; SIGNOR and HIPPIE use their public query APIs.
+
+The hu.MAP 3.0 interaction network is a large bulk download and is deliberately not downloaded by a web request. Install or refresh its local SQLite lookup index explicitly:
+
+```bash
+.venv/bin/python scripts/update_extended_databases.py --source humap
+```
+
+Until that command finishes, hu.MAP remains selectable and reports that its local index is not installed. Every source, including each extended source, has an `AllSpecies*.csv` file under `Supported_Organisms/` and therefore participates in the organism coverage and overlap overview.
+
+Complete-species jobs are implemented for Complex Portal and hu.MAP 3.0. Reactome, SIGNOR, HIPPIE, and MINT currently support single-protein searches and exports; their complete-species bulk ingestion remains intentionally disabled until version-pinned bulk refresh jobs are added.
+
+Run the extended-source regression tests with:
+
+```bash
+PYTHONPATH=backend .venv/bin/python -m unittest discover -s tests -v
 ```
 
 The default frontend port is `5174`. If that port is already in use, pass a different port from the project root:
@@ -188,3 +208,88 @@ Complete-species Parquet exports include these fields when all databases are sel
 - `GET /search`
 - `POST /mitab`
 - `POST /parquet`
+
+## Collection searches
+
+Open **Collection search** beside **Single searches**. Choose a supported species from
+its suggestions, paste a list or upload a CSV/TSV/TXT file, and select the source
+databases and network mode. Files contain one identifier per line, without a header
+or extra columns. Collections support up to 200 distinct identifiers; duplicate rows
+are merged. Mixed lists detect UniProt accessions/entry names, gene symbols, Ensembl
+IDs and NCBI GeneIDs. Select an explicit identifier type for gene symbols that resemble
+another ID format. UniProt isoforms resolve to their primary accession, so analysis
+runs at the protein-entry level.
+
+**Resolve collection IDs** validates identifiers against the selected species using
+UniProt. Review the candidate table before running: ambiguous IDs require an explicit
+candidate or **Skip this ID**. Unresolved and skipped inputs appear as isolated amber
+nodes, with no fabricated interactions. Multiple inputs mapping to one accession
+produce one protein node, while the report retains counts for the original input IDs.
+
+- **Induced** includes only interactions between resolved input proteins.
+- **Expanded** adds direct first-neighbor connections from the inputs. Neighbor edges
+  are gray. Neighbor-to-neighbor edges and additional hops are not queried or inferred.
+
+The custom Canvas network supports dragging, zooming, searching by gene/accession,
+community separation, node details and click-based evidence inspection. Filter source databases, evidence category,
+reported publication count, experimental method and raw source scores. Publication
+counts use distinct IDs; unavailable metadata remain unknown. Score thresholds affect
+only evidence from the chosen database; independent retained evidence may keep a pair
+visible. Complex co-membership and STRING associations are functional evidence, not
+proof of direct binding. Directed source evidence retains its regulator, target and
+effect even though topology statistics use an undirected simple graph.
+
+The appearance menu controls labels, source colors and edge widths. Consensus widths
+use the number of source databases, not the number of independent experiments.
+Integrated sources can overlap; source warnings are included in the report. Relative
+score widths scale each source/score series within its visible range and average the
+result as a visual cue. Raw scores are not compared as probabilities.
+
+Statistics update for the filtered graph in a background worker: node/edge counts,
+unique/shared database pairs, Jaccard overlaps, degrees/hubs, connected components,
+mean local clustering, score histograms and shared/database-only interactors.
+Clustering includes isolated nodes as zero; Jaccard is N/A for an empty union.
+Download the current network as SVG, PNG, GraphML, SIF, Cytoscape CX or JSON, or download
+an analysis PDF with the network, settings, mapping report, coverage notes and statistics.
+JSON retains evidence and analysis metadata; SIF records topology only.
+
+Collection jobs run in the background with bounded concurrency and cancellation.
+Up to 12 jobs are retained per server process; inactive jobs expire after one hour.
+Restarting the backend clears them, so use one backend worker for the current local
+job store. Networks are capped at 50,000 pairs, 200,000 retained evidence rows and
+10,000 additional identifiers for validation. Source failures, ambiguous/unmapped
+interactors and truncated results are reported explicitly. Large networks use a
+circle layout and paginated degree tables to reduce browser work.
+
+Collection CORUM queries include every matching complex with publications and methods.
+BioGRID index schema 4 retains PubMed identifiers; the first lookup after upgrading
+rebuilds the existing local index from its MITAB source. On the full dataset, this
+one-time rebuild can take several minutes.
+
+Run the collection regression checks from the repository root:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend .venv/bin/python -m unittest discover -s backend/tests -v
+npm --prefix frontend test
+npm --prefix frontend run build
+```
+
+The evidence tests require the configured local CORUM data and backend dependencies.
+The frontend requires Node 20.19+ (or a supported newer Node release).
+
+## Python API client
+
+`klinkppi.py` provides the web application's single-protein, supported-species,
+complete-species and collection workflows without plotting dependencies. It polls
+background jobs, returns ordinary dictionaries, downloads species MITAB/Parquet,
+and exports single-search or collection results to JSON/CSV.
+
+```python
+from klinkppi import KlinkPPIClient
+
+client = KlinkPPIClient("http://127.0.0.1:8000")
+result = client.single_search("Q07889", tax_id="9606", databases=["String", "IntAct"])
+client.export_single_csv(result, "sos1_interactions.csv")
+```
+
+See `python_api_example.py` for complete-species and collection examples.

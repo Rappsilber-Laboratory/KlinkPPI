@@ -3,6 +3,16 @@ import SpeciesDownloadPanel from './SpeciesDownloadPanel'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
 
+const EXTENDED_DATABASES = [
+    ['ComplexPortal', 'Complex Portal'],
+    ['Reactome', 'Reactome'],
+    ['Signor', 'SIGNOR'],
+    ['Hippie', 'HIPPIE'],
+    ['HuMap', 'hu.MAP 3.0'],
+    ['Mint', 'MINT'],
+]
+const ALL_DATABASES = ['String', 'IntAct', 'BioGrid', 'Corum', 'HuRI', 'Predictomes', ...EXTENDED_DATABASES.map(([key]) => key)]
+
 const STATUS_STYLES = {
     pending: 'bg-slate-100 text-slate-700',
     running: 'bg-amber-100 text-amber-800',
@@ -51,6 +61,12 @@ const DATABASE_STYLES = {
         label: 'text-indigo-800',
         surface: 'bg-indigo-50 border-indigo-200',
     },
+    ComplexPortal: { chip: 'bg-cyan-100 text-cyan-800 border-cyan-200', accent: 'bg-cyan-500', label: 'text-cyan-800', surface: 'bg-cyan-50 border-cyan-200' },
+    Reactome: { chip: 'bg-lime-100 text-lime-800 border-lime-200', accent: 'bg-lime-500', label: 'text-lime-800', surface: 'bg-lime-50 border-lime-200' },
+    Signor: { chip: 'bg-red-100 text-red-800 border-red-200', accent: 'bg-red-500', label: 'text-red-800', surface: 'bg-red-50 border-red-200' },
+    Hippie: { chip: 'bg-teal-100 text-teal-800 border-teal-200', accent: 'bg-teal-500', label: 'text-teal-800', surface: 'bg-teal-50 border-teal-200' },
+    HuMap: { chip: 'bg-violet-100 text-violet-800 border-violet-200', accent: 'bg-violet-500', label: 'text-violet-800', surface: 'bg-violet-50 border-violet-200' },
+    Mint: { chip: 'bg-pink-100 text-pink-800 border-pink-200', accent: 'bg-pink-500', label: 'text-pink-800', surface: 'bg-pink-50 border-pink-200' },
 }
 
 const SearchSection = ({setresults}) => {
@@ -66,6 +82,7 @@ const SearchSection = ({setresults}) => {
     const [speciesJob,setspeciesJob]=useState(null)
     const [speciesLogOpen,setspeciesLogOpen]=useState(true)
     const [selected_databases,setselected_databases]=useState([])
+    const [databaseStatuses,setDatabaseStatuses]=useState({})
     const [loading,setloading]=useState(false)
     const [loadingMessage,setloadingMessage]=useState('Searching databases...')
     const abortController = React.useRef(null)
@@ -177,6 +194,8 @@ const SearchSection = ({setresults}) => {
         )
         setloading(true)
         setresults(null)
+        const requestedDatabases = selected_databases.length > 0 ? selected_databases : ALL_DATABASES
+        setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => [database, 'running'])))
         abortController.current = new AbortController()
 
         try{
@@ -211,6 +230,12 @@ const SearchSection = ({setresults}) => {
             }
 
             setresults(data)
+            const output = data?.[1]?.output || []
+            setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => {
+                const value = output.find(item => Object.hasOwn(item, database))?.[database]
+                const failed = typeof value === 'string' || value?.[0]?.info?.Error
+                return [database, failed ? 'failed' : 'completed']
+            })))
             settax_id(data?.[0]?.Input?.TaxonomyId || '')
             setspecies_name(data?.[0]?.Input?.SpeciesName || species_name)
             setshowSpeciesSuggestions(false)
@@ -221,6 +246,7 @@ const SearchSection = ({setresults}) => {
           } else {
             alert(error.message)
           }
+          setDatabaseStatuses(current => Object.fromEntries(Object.keys(current).map(database => [database, 'failed'])))
           console.log(error)
         }finally{
           setloading(false)
@@ -414,10 +440,10 @@ const SearchSection = ({setresults}) => {
 
   return (
     <div>
-      <section className="bg-slate-200 py-14 px-4 sm:px-6">
-      <div className="w-full max-w-[110rem] mx-auto">
-        <div className="bg-white shadow-md rounded-2xl p-8 grid gap-8 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start">
-        <div className="flex flex-col gap-4">
+      <section className="single-search-section px-4 sm:px-6">
+      <div className="app-frame w-full mx-auto">
+        <div className="single-search-card grid gap-8 lg:grid-cols-[minmax(15rem,21rem)_minmax(0,1fr)] lg:items-start">
+        <div className="database-picker flex flex-col gap-4">
         <label className='font-bold text-left'>Databases Selections:</label>
 
         <div className="space-y-2">
@@ -428,7 +454,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('String')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">STRING</span>
+        <span className={`database-status-dot ${databaseStatuses.String || 'idle'}`} /><span className="font-medium text-slate-900">STRING</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -438,7 +464,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('IntAct')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">IntAct</span>
+        <span className={`database-status-dot ${databaseStatuses.IntAct || 'idle'}`} /><span className="font-medium text-slate-900">IntAct</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -448,7 +474,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('BioGrid')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">BioGRID</span>
+        <span className={`database-status-dot ${databaseStatuses.BioGrid || 'idle'}`} /><span className="font-medium text-slate-900">BioGRID</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -458,7 +484,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Corum')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">CORUM</span>
+        <span className={`database-status-dot ${databaseStatuses.Corum || 'idle'}`} /><span className="font-medium text-slate-900">CORUM</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -468,7 +494,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('HuRI')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">HuRI</span>
+        <span className={`database-status-dot ${databaseStatuses.HuRI || 'idle'}`} /><span className="font-medium text-slate-900">HuRI</span>
         </label>
 
         <label className="flex items-center gap-2 mb-3">
@@ -478,8 +504,20 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Predictomes')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">Predictomes</span>
+        <span className={`database-status-dot ${databaseStatuses.Predictomes || 'idle'}`} /><span className="font-medium text-slate-900">Predictomes</span>
         </label>
+
+        {EXTENDED_DATABASES.map(([databaseKey, databaseLabel]) => (
+        <label key={databaseKey} className="flex items-center gap-2">
+        <input
+            type="checkbox"
+            value={databaseKey}
+            checked={selected_databases.includes(databaseKey)}
+            onChange={handleDatabaseChange}
+        />
+        <span className={`database-status-dot ${databaseStatuses[databaseKey] || 'idle'}`} /><span className="font-medium text-slate-900">{databaseLabel}</span>
+        </label>
+        ))}
         </div>
         </div>
         
@@ -640,7 +678,7 @@ const SearchSection = ({setresults}) => {
           <div className="text-center lg:text-left">
             <p className="text-blue-900 font-semibold mb-3">{loadingMessage}</p>
             <div className="flex flex-col gap-2">
-              {(selected_databases.length > 0 ? selected_databases:['String', 'IntAct', 'BioGrid', 'Corum', 'Predictomes', 'HuRI']).map(db => (
+              {(selected_databases.length > 0 ? selected_databases : ALL_DATABASES).map(db => (
                 <div key={db} className="flex items-center gap-2 text-gray-600 justify-center lg:justify-start">
                     <div className="animate-pulse w-2 h-2  bg-blue-900"></div>
                     Searching {db}...

@@ -35,6 +35,31 @@ const DB_OPTIONAL_COLUMNS = {
     { key: 'Purification_Method', label: 'Purification Method' },
   ],
   HuRI: [],
+  ComplexPortal: [
+    { key: 'complex_id', label: 'Complex ID' },
+    { key: 'complex_name', label: 'Complex Name' },
+    { key: 'Evidence_Class', label: 'Evidence Class' },
+  ],
+  Reactome: [
+    { key: 'Interaction_Type', label: 'Interaction Type' },
+    { key: 'PubMed_Ids', label: 'PubMed IDs' },
+    { key: 'Confidence_Score', label: 'Confidence Score' },
+  ],
+  Signor: [
+    { key: 'Effect', label: 'Effect' },
+    { key: 'Mechanism', label: 'Mechanism' },
+    { key: 'Confidence_Score', label: 'SIGNOR Score' },
+  ],
+  Hippie: [
+    { key: 'Confidence_Score', label: 'HIPPIE Score' },
+    { key: 'Source_Count', label: 'Source Count' },
+    { key: 'Experiment_Count', label: 'Experiment Count' },
+  ],
+  HuMap: [{ key: 'Confidence_Score', label: 'ML Probability' }],
+  Mint: [
+    { key: 'Interaction_Detection_Method', label: 'Detection Method' },
+    { key: 'PubMed_Ids', label: 'PubMed IDs' },
+  ],
 }
 
 const DEFAULT_COLUMNS = [
