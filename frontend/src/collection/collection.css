@@ -57,6 +57,7 @@
 .network-controls { background: #f8fafc; padding: 1rem; border-right: 1px solid #e2e8f0; }
 .network-controls > label { margin-top: 1rem; }
 .network-controls select, .network-controls input:not([type=checkbox]) { margin-top: .35rem; }
+.collection-shell .network-controls input[type=color] { height: 2.5rem; padding: .25rem; cursor: pointer; }
 .source-dot { width: .6rem; height: .6rem; border-radius: 50%; display: inline-block; }
 .network-main { min-width: 0; position: relative; padding: 0; background: #f7f6ef; }
 .network-toolbar { display: flex; justify-content: space-between; gap: .6rem; flex-wrap: wrap; padding: .8rem; border-bottom: 1px solid #d9ddd8; }
