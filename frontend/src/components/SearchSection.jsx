@@ -537,7 +537,6 @@ const SearchSection = ({setresults}) => {
             className="border border-gray-300 px-4 py-3 text-gray-700 focus:outline-none focus:ring-2"
           >
             <option value="single_search">Single Search</option>
-            <option value="complete_species">Complete Species PPI</option>
           </select>
 
         {search_type === 'single_search' && (
