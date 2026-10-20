@@ -230,6 +230,19 @@ produce one protein node, while the report retains counts for the original input
 - **Expanded** adds direct first-neighbor connections from the inputs. Neighbor edges
   are gray. Neighbor-to-neighbor edges and additional hops are not queried or inferred.
 
+Induced results include **Pairs with no interaction found**, a searchable, paginated
+list of resolved input pairs without evidence in the full search results (before
+display filters). Click **Check GO** to fetch both proteins' UniProt annotations and
+show exact shared GO IDs, names, categories and annotation evidence for each protein.
+Annotations are fetched on demand and cached per protein for up to an hour. Ancestor
+terms are not inferred. Shared GO terms do not establish a protein interaction;
+missing interaction evidence can reflect incomplete database coverage.
+
+The API exposes this comparison through
+`GET /collection/jobs/{job_id}/shared-go?source=P04637&target=P38398` for a completed
+induced job. Both accessions must be resolved inputs without an existing edge in
+that job. UniProt failures return a retryable error rather than an empty comparison.
+
 The custom Canvas network supports dragging, zooming, searching by gene/accession,
 community separation, node details and click-based evidence inspection. Filter source databases, evidence category,
 reported publication count, experimental method and raw source scores. Publication

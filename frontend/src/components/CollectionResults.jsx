@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { COLORS, LABELS, filterGraph } from '../collection/analysis'
 import { analysisPDF, cx, download, graphML, sif } from '../collection/exports'
 import CollectionNetworkCanvas from './CollectionNetworkCanvas'
+import CollectionUnknownPairs from './CollectionUnknownPairs'
 
 const EMPTY_GRAPH = { nodes: [], edges: [] }
 
@@ -91,6 +92,7 @@ export default function CollectionResults({ job }) {
             <div className="collection-actions"><span>Export filtered network:</span>{['svg', 'png', 'graphml', 'sif', 'cx', 'json'].map(format => <button key={format} onClick={() => exportGraph(format)} disabled={exportBusy || (['svg', 'png'].includes(format) && !graph.nodes.length)}>{format.toUpperCase()}</button>)}</div>
             {exportError && <p className="collection-error" role="alert">{exportError}</p>}
         </div>
+        {job.mode === 'induced' && <CollectionUnknownPairs key={job.job_id} job={job} graph={rawGraph} />}
         <div className="collection-card"><span className="collection-eyebrow">ANALYSIS REPORT</span><h2>Evidence, overlap and topology</h2><p className="collection-note">All statistics describe the filtered, undirected network. Isolated inputs count as components. Evidence categories follow source semantics; complex membership and functional associations do not establish direct binding.</p>
             {!stats ? <p role="status">{calculationError || 'Calculating statistics…'}</p> : <>
                 <div className="collection-metrics"><div><strong>{stats.components.length}</strong><span>Connected components</span></div><div><strong>{stats.components[0] || 0}</strong><span>Largest component</span></div><div><strong>{stats.clustering.toFixed(3)}</strong><span>Mean local clustering</span></div><div><strong>{stats.degrees.filter(n => n.degree === 0).length}</strong><span>Isolated nodes</span></div></div>

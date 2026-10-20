@@ -5,6 +5,7 @@ import CollectionResultsBoundary from './CollectionResultsBoundary'
 import '../collection/collection.css'
 
 const API = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
+const EXAMPLE_IDENTIFIERS = ['P04217', 'P00751', 'P56211', 'P53539', 'P00790', 'Q02241', 'P30556', 'P04181', 'P11241', 'Q9Y265']
 async function request(path, options = {}) {
     const response = await fetch(`${API}${path}`, options)
     const data = await response.json()
@@ -71,6 +72,19 @@ export default function CollectionSearch() {
         if (Array.isArray(available)) setDatabases(current => current.filter(db => available.includes(db)))
     }
     const available = species?.supported_databases || species?.databases || DATABASES
+    const loadExample = async () => {
+        setPending(true)
+        setError('')
+        try {
+            const data = await request('/species/search?q=Homo%20sapiens&limit=10')
+            const human = data.results?.find(value => String(value.tax_id) === '9606')
+            if (!human) throw new Error('Human species information is unavailable. Please retry loading the example.')
+            selectSpecies(human)
+            setIdentifiers(EXAMPLE_IDENTIFIERS.join('\n'))
+            setInputType('UniProtKB')
+        } catch (err) { setError(err.message) }
+        finally { setPending(false) }
+    }
     const upload = async event => {
         const file = event.target.files?.[0]
         if (!file) return
@@ -130,7 +144,7 @@ export default function CollectionSearch() {
                     </div>
                     <div><label htmlFor="collection-input-type">Identifier type</label><select id="collection-input-type" value={inputType} onChange={e => setInputType(e.target.value)}><option value="auto">Detect each ID (mixed list)</option><option value="UniProtKB">UniProt accession / entry name</option><option value="Gene_Name">Gene symbols</option><option value="Ensembl">Ensembl</option><option value="GeneID">NCBI GeneID</option></select><p className="collection-note">Use an explicit type when a gene symbol resembles another ID.</p></div>
                 </div>
-                <label htmlFor="collection-identifiers">Gene / protein list</label>
+                <div className="collection-job-heading"><label htmlFor="collection-identifiers">Gene / protein list</label><button type="button" onClick={loadExample} disabled={busy}>Load example</button></div>
                 <textarea id="collection-identifiers" rows={6} placeholder={'TP53\nBRCA1\nP04637'} value={identifiers} onChange={e => setIdentifiers(e.target.value)} required />
                 <div className="collection-upload"><label htmlFor="collection-file">Or upload CSV, TSV or TXT</label><input id="collection-file" type="file" accept=".csv,.tsv,.txt,text/plain,text/csv,text/tab-separated-values" onChange={upload} /><p className="collection-note">One ID per line. No header or extra columns. Up to 200 distinct IDs; duplicates are merged.</p></div>
                 <div className="collection-grid">

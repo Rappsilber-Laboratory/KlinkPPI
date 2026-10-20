@@ -350,8 +350,18 @@ def _network_job(job_id):
                     if error:
                         warnings.append(f"{db} / {seed}: {error}")
                         database_statuses[db]["errors"] += 1
+                    if db == "String":
+                        rows = [{**row, "Interactor_B_UniProt": seed} for row in rows]
+                    if job["mode"] == "induced":
+                        # Inputs and their aliases were already species-validated.
+                        # Discard outside interactors before applying evidence limits
+                        # so they neither consume capacity nor trigger UniProt lookups.
+                        rows = [row for row in rows if all(
+                            canonical.get(canonical_key(row.get(f"Interactor_{side}_UniProt") or row.get(f"Interactor_{side}")), {}).get("id") in seeds
+                            for side in ("A", "B")
+                        )]
                     room = max(0, MAX_EDGES * 4 - len(records))
-                    records.extend((db, seed, {**row, "Interactor_B_UniProt": seed} if db == "String" else row, info) for row in rows[:room])
+                    records.extend((db, seed, row, info) for row in rows[:room])
                     if len(rows) > room and "Evidence row limit reached; analysis is partial." not in warnings:
                         warnings.append("Evidence row limit reached; analysis is partial.")
                 except Exception as exc:
@@ -364,19 +374,21 @@ def _network_job(job_id):
                       progress=f"Queried {completed_count} / {len(tasks)} protein/database combinations", warnings=warnings.copy())
         if job["cancel"].is_set():
             return
-        endpoint_ids = list(dict.fromkeys(clean(row.get(f"Interactor_{side}_UniProt") or row.get(f"Interactor_{side}")) for _, _, row, _ in records for side in ("A", "B")))
-        missing = [token for token in endpoint_ids if token and canonical_key(token) not in canonical]
-        if len(missing) > MAX_ENDPOINTS:
-            warnings.append(f"Interactor validation capped at {MAX_ENDPOINTS:,} IDs; analysis is partial.")
-            missing = missing[:MAX_ENDPOINTS]
-        patch(job_id, progress=f"Validating {len(missing)} interactor IDs against the selected species…")
-        matches, errors = resolve_tokens(missing, job["tax_id"], cancel=job["cancel"])
-        for token, candidates in matches.items():
-            candidate = endpoint_candidate(candidates)
-            if candidate:
-                canonical[canonical_key(token)] = candidate
-        if errors:
-            warnings.append(f"Interactor ID lookup failed for {len(errors)} identifiers; affected evidence is excluded.")
+        if job["mode"] == "expanded":
+            endpoint_ids = list(dict.fromkeys(clean(row.get(f"Interactor_{side}_UniProt") or row.get(f"Interactor_{side}")) for _, _, row, _ in records for side in ("A", "B")))
+            missing = [token for token in endpoint_ids if token and canonical_key(token) not in canonical]
+            if len(missing) > MAX_ENDPOINTS:
+                warnings.append(f"Interactor validation capped at {MAX_ENDPOINTS:,} IDs; analysis is partial.")
+                missing = missing[:MAX_ENDPOINTS]
+            patch(job_id, progress=f"Validating {len(missing)} interactor IDs against the selected species…")
+            matches, errors = resolve_tokens(missing, job["tax_id"], cancel=job["cancel"])
+            for token, candidates in matches.items():
+                candidate = endpoint_candidate(candidates)
+                if candidate:
+                    canonical[canonical_key(token)] = candidate
+            if errors:
+                warnings.append(f"Interactor ID lookup failed for {len(errors)} identifiers; affected evidence is excluded.")
+        patch(job_id, progress="Building network from collected interactions…")
         if job["cancel"].is_set():
             return
         graph = build_graph(seeds, records, canonical, job["mode"], job["tax_id"], job["species"], unresolved)

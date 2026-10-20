@@ -89,6 +89,11 @@
 .histogram > div { flex: 1; min-height: 2px; border-radius: 3px 3px 0 0; }
 .histogram-range { display: flex; justify-content: space-between; font-size: .7rem; color: #64748b; margin-top: .4rem; }
 .degree-table { max-height: 450px; }
+.unknown-pairs input[type=search] { max-width: 28rem; }
+.shared-go-row > td { background: #f0fdfa; }
+.shared-go-result { padding: .5rem; }
+.shared-go-result .collection-table-wrap { max-height: 360px; overflow: auto; }
+.unknown-pairs a { color: #0f766e; text-decoration: underline; }
 .search-tabs { width: 100%; max-width: none; margin: 0 auto; display: flex; flex-wrap: wrap; gap: .5rem; padding: clamp(.75rem,2vw,1.5rem) clamp(.75rem,2vw,2rem) 0; }
 .search-tabs button { padding: .8rem 1.2rem; background: white; border: 1px solid #cbd5e1; border-radius: .75rem; font-weight: 600; color: #475569; cursor: pointer; }
 .search-tabs button[aria-selected=true] { background: #0f766e; color: white; border-color: #0f766e; }

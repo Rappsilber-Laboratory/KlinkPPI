@@ -28,7 +28,7 @@ from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
-from app.services import collection_search
+from app.services import collection_search, collection_go
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -482,3 +482,17 @@ def cancel_collection(job_id: str):
         return collection_search.cancel_job(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection job not found or expired")
+
+
+@app.get("/collection/jobs/{job_id}/shared-go")
+def collection_shared_go(job_id: str, source: str = Query(min_length=1, max_length=100), target: str = Query(min_length=1, max_length=100)):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_go.shared_go(job, source, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except collection_go.GOLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

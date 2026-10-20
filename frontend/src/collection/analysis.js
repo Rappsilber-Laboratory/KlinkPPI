@@ -2,6 +2,19 @@ export const DATABASES = ['String', 'IntAct', 'BioGrid', 'Corum', 'HuRI', 'Predi
 export const COLORS = { String: '#0284c7', IntAct: '#c026d3', BioGrid: '#059669', Corum: '#d97706', HuRI: '#e11d48', Predictomes: '#4f46e5', ComplexPortal: '#0891b2', Reactome: '#65a30d', Signor: '#dc2626', Hippie: '#0d9488', HuMap: '#7c3aed', Mint: '#db2777' }
 export const LABELS = { String: 'STRING', BioGrid: 'BioGRID', Corum: 'CORUM', Signor: 'SIGNOR', Hippie: 'HIPPIE', HuMap: 'hu.MAP', ComplexPortal: 'Complex Portal' }
 
+export function unknownInputPairs(graph) {
+    const nodes = [...new Map(graph.nodes.filter(node => node.input && !node.unresolved).map(node => [node.id, node])).values()]
+    const key = (a, b) => JSON.stringify([a, b].sort())
+    const known = new Set(graph.edges.map(edge => key(edge.source, edge.target)))
+    const pairs = []
+    for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+            if (!known.has(key(nodes[i].id, nodes[j].id))) pairs.push({ key: key(nodes[i].id, nodes[j].id), source: nodes[i], target: nodes[j] })
+        }
+    }
+    return pairs
+}
+
 // Flat, headerless lists; reject multi-column input instead of guessing a column.
 export function parseIdentifiers(text) {
     const result = []

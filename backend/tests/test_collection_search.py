@@ -155,6 +155,59 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(cs.endpoint_candidate([fragment, reviewed])['id'], 'P00533')
         self.assertIsNone(cs.endpoint_candidate([reviewed, candidate('Q99999', 'EGFR')]))
 
+    def test_induced_job_skips_neighbor_lookups_and_filters_before_row_limit(self):
+        sos, egfr = candidate('Q07889', 'SOS1'), candidate('P00533', 'EGFR')
+        outside_rows = [{'Interactor_A': f'OUTSIDE{i}'} for i in range(10)]
+        rows = outside_rows + [
+            {'Interactor_A': 'egfr', 'organism_tax_id': '9606'},
+            {'Interactor_A': 'EGFR', 'organism_tax_id': '10090'},
+        ]
+        resolver = Mock(return_value=[{'info': {}}, {'Direct_Interactions': rows}])
+        job_id = 'test-induced-job'
+        cs.JOBS[job_id] = {
+            'resolution': [{'input': c['gene'], 'candidates': [c]} for c in (sos, egfr)],
+            'selections': {c['gene']: c['id'] for c in (sos, egfr)},
+            'databases': ['String'], 'resolver': resolver, 'mode': 'induced',
+            'tax_id': '9606', 'species': 'Homo sapiens', 'cancel': Event(), 'status': 'running',
+        }
+        try:
+            with patch.object(cs, 'resolve_tokens') as lookup, patch.object(cs, 'MAX_EDGES', 2):
+                cs._network_job(job_id)
+            lookup.assert_not_called()
+            job = cs.JOBS[job_id]
+            self.assertEqual(job['status'], 'completed')
+            self.assertEqual(len(job['graph']['edges']), 1)
+            self.assertEqual({job['graph']['edges'][0]['source'], job['graph']['edges'][0]['target']}, {sos['id'], egfr['id']})
+            self.assertEqual(job['warnings'], [])
+            self.assertFalse(job['graph']['truncated'])
+            self.assertEqual(job['database_statuses']['String']['completed'], 2)
+        finally:
+            del cs.JOBS[job_id]
+
+    def test_expanded_job_still_validates_outside_interactors(self):
+        resolver = Mock(return_value=[{'info': {}}, {'Interactors': [
+            {'Interactor_A': self.c['id'], 'Interactor_B': self.a['id']},
+            {'Interactor_A': 'UNKNOWN', 'Interactor_B': self.a['id']},
+        ]}])
+        job_id = 'test-expanded-job'
+        cs.JOBS[job_id] = {
+            'resolution': [{'input': self.a['id'], 'candidates': [self.a]}],
+            'selections': {self.a['id']: self.a['id']},
+            'databases': ['IntAct'], 'resolver': resolver, 'mode': 'expanded',
+            'tax_id': '9606', 'species': 'Homo sapiens', 'cancel': Event(), 'status': 'running',
+        }
+        try:
+            with patch.object(cs, 'resolve_tokens', return_value=({self.c['id']: [self.c], 'UNKNOWN': []}, {})) as lookup:
+                cs._network_job(job_id)
+            lookup.assert_called_once_with([self.c['id'], 'UNKNOWN'], '9606', cancel=cs.JOBS[job_id]['cancel'])
+            job = cs.JOBS[job_id]
+            self.assertEqual(job['status'], 'completed')
+            self.assertEqual(len(job['graph']['edges']), 1)
+            self.assertTrue(job['graph']['edges'][0]['expanded'])
+            self.assertEqual(job['graph']['unmapped_evidence_rows'], 1)
+        finally:
+            del cs.JOBS[job_id]
+
     def test_edge_cap_is_reported(self):
         with patch.object(cs, 'MAX_EDGES', 1):
             graph = cs.build_graph(self.seeds, self.records, self.canonical, 'expanded', '9606', 'Homo sapiens', [])

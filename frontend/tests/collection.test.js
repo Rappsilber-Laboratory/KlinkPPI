@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { computeStatistics, filterGraph, parseIdentifiers } from '../src/collection/analysis.js'
+import { computeStatistics, filterGraph, parseIdentifiers, unknownInputPairs } from '../src/collection/analysis.js'
 import { cx, graphML, sif, xml } from '../src/collection/exports.js'
 
 const ev = (db, score = null, publications = [], methods = [], type = 'direct') => ({ database: db, score, score_name: score == null ? null : 'score', publications, methods, type })
@@ -16,6 +16,17 @@ const rawGraph = { nodes, edges: [
     { id: 'e2', source: 'B', target: 'C', expanded: true, evidence: [ev('BioGrid', null, [], ['affinity capture'])] },
 ] }
 const defaults = { databases: ['IntAct', 'BioGrid'], type: 'all', method: '', scoreDatabase: '', minScore: '', minPublications: 0 }
+
+test('unknown pairs use resolved inputs only, exclude known pairs in either direction and deduplicate IDs', () => {
+    const inputD = { id: 'D', gene: 'Delta', input: true }
+    const graph = { nodes: [...nodes, inputD, inputD], edges: [{ source: 'B', target: 'A' }] }
+    const pairs = unknownInputPairs(graph)
+    assert.deepEqual(pairs.map(pair => [pair.source.id, pair.target.id]), [['A', 'D'], ['B', 'D']])
+    assert.equal(unknownInputPairs({ nodes: [inputD], edges: [] }).length, 0)
+    assert.equal(unknownInputPairs({ nodes: [], edges: [] }).length, 0)
+    // Hiding known edges must not affect the list: the UI passes the raw graph.
+    assert.equal(unknownInputPairs(graph).length, 2)
+})
 
 test('headerless lists handle quotes, BOM, CRLF, duplicates and reject multi-column data', () => {
     assert.deepEqual(parseIdentifiers('\uFEFF"TP53"\r\nP04637\r\nTP53\r\n'), { ids: ['TP53', 'P04637'], duplicates: 1 })
