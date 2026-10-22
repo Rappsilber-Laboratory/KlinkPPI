@@ -476,6 +476,16 @@ def run_collection(job_id: str, request: CollectionChoices):
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@app.post("/collection/jobs/{job_id}/rerun", status_code=202)
+def rerun_collection(job_id: str):
+    try:
+        return collection_search.rerun_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @app.post("/collection/jobs/{job_id}/cancel")
 def cancel_collection(job_id: str):
     try:

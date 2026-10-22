@@ -221,6 +221,68 @@ class NetworkTests(unittest.TestCase):
         finally:
             del cs.JOBS['test-completed']
 
+    def test_rerun_preserves_inputs_and_mappings_and_queries_sources_again(self):
+        for mode in ('induced', 'expanded'):
+            with self.subTest(mode=mode):
+                resolver = Mock(return_value=[{'info': {}}, {'Interactors': [
+                    {'Interactor_A': self.b['id'], 'Interactor_B': self.a['id']},
+                ]}])
+                job_id = 'test-rerun'
+                old_cancel = Event()
+                old_cancel.set()
+                cs.JOBS[job_id] = {
+                    'job_id': job_id, 'created_at': 0, 'status': 'completed', 'cancel': old_cancel,
+                    'tokens': ['TP53', 'BRCA1', 'skip'], 'input_type': 'Gene_Name',
+                    'resolution': [{'input': token, 'candidates': candidates} for token, candidates in
+                                   [('TP53', [self.a, self.c]), ('BRCA1', [self.b]), ('skip', [self.d])]],
+                    'selections': {'TP53': self.a['id'], 'BRCA1': self.b['id'], 'skip': None},
+                    'databases': ['IntAct'], 'mode': mode, 'tax_id': '9606', 'species': 'Homo sapiens',
+                    'resolver': resolver, 'warnings': ['Previous source failure'], 'graph': {'nodes': [], 'edges': []},
+                    'database_statuses': {'IntAct': {'status': 'failed', 'completed': 2, 'total': 2, 'errors': 2}},
+                }
+                try:
+                    with patch.object(cs.POOL, 'submit') as submit, patch.object(cs, 'resolve_tokens', return_value=({}, {})) as lookup:
+                        result = cs.rerun_job(job_id)
+                        self.assertEqual(result['status'], 'running')
+                        self.assertIsNone(result['graph'])
+                        self.assertEqual(result['warnings'], [])
+                        self.assertEqual(result['tokens'], ['TP53', 'BRCA1', 'skip'])
+                        self.assertEqual(result['selections'], {'TP53': self.a['id'], 'BRCA1': self.b['id'], 'skip': None})
+                        self.assertEqual(result['database_statuses']['IntAct']['status'], 'pending')
+                        self.assertFalse(cs.JOBS[job_id]['cancel'].is_set())
+                        self.assertGreater(result['created_at'], 0)
+                        submit.assert_called_once_with(cs._network_job, job_id)
+                        # Repeated clicks cannot enqueue a second rerun.
+                        with self.assertRaisesRegex(ValueError, 'completed collection'):
+                            cs.rerun_job(job_id)
+                        cs._network_job(job_id)
+                    self.assertEqual(resolver.call_count, 2)
+                    self.assertEqual({call.args for call in resolver.call_args_list}, {
+                        ('IntAct', self.a['id'], '9606'), ('IntAct', self.b['id'], '9606')})
+                    if mode == 'induced':
+                        lookup.assert_not_called()
+                    else:
+                        lookup.assert_called_once()
+                    job = cs.JOBS[job_id]
+                    self.assertEqual(job['status'], 'completed')
+                    self.assertEqual(len(job['graph']['edges']), 1)
+                    self.assertEqual(job['warnings'], [])
+                finally:
+                    del cs.JOBS[job_id]
+
+    @patch.object(cs.POOL, 'submit')
+    def test_rerun_rejects_unfinished_or_missing_jobs(self, submit):
+        for status in ('resolving', 'awaiting_selection', 'running', 'failed', 'cancelled'):
+            cs.JOBS['test-unfinished-rerun'] = {'status': status}
+            try:
+                with self.assertRaises(ValueError):
+                    cs.rerun_job('test-unfinished-rerun')
+            finally:
+                del cs.JOBS['test-unfinished-rerun']
+        with self.assertRaises(KeyError):
+            cs.rerun_job('missing-job')
+        submit.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

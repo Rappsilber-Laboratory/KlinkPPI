@@ -34,6 +34,7 @@
 .collection-shell .collection-warning { background: #fffbeb; border-color: #fde68a; }
 .collection-warning ul { padding-left: 1.2rem; list-style: disc; font-size: .85rem; }
 .collection-job-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem; }
+.collection-job-buttons { display: flex; align-items: center; gap: .75rem; }
 .collection-status { background: #f1f5f9; padding: .4rem .7rem; border-radius: 2rem; font-size: .75rem; text-transform: uppercase; }
 .database-progress { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
 .database-progress > span { display: inline-flex; align-items: center; gap: .4rem; padding: .38rem .62rem; border: 1px solid #dbe3eb; border-radius: 999px; background: #f8fafc; font-size: .75rem; }
@@ -94,6 +95,29 @@
 .shared-go-result { padding: .5rem; }
 .shared-go-result .collection-table-wrap { max-height: 360px; overflow: auto; }
 .unknown-pairs a { color: #0f766e; text-decoration: underline; }
+.collection-shell.network-image-dialog { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #fff; color: #334155; overflow: hidden; }
+.network-image-dialog[open] { display: flex; flex-direction: column; }
+.network-image-dialog::backdrop { background: #0f172acc; }
+.network-window-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem; padding: .75rem 1rem; border-bottom: 1px solid #dbe3eb; flex: 0 0 auto; }
+.network-window-heading h2 { font-size: 1.15rem; margin: .25rem 0 0; }
+.network-window-workspace { display: grid; grid-template-columns: 250px minmax(0,1fr); min-height: 0; flex: 1; }
+.network-window-controls { overflow-y: auto; }
+.network-window-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.network-window-main .network-canvas { flex: 1; height: auto; min-height: 0; }
+.network-window-main .network-toolbar { flex: 0 0 auto; }
+.network-window-main .network-toolbar form { display: flex; flex: 1 1 220px; gap: .4rem; min-width: 0; }
+.network-window-main .network-toolbar input { min-width: 0; }
+.network-window-detail { padding: .3rem 1rem; font-size: .8rem; overflow-wrap: anywhere; }
+@media(max-width: 640px) {
+    .network-window-heading { padding: .5rem .75rem; }
+    .network-window-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(0,auto) minmax(0,1fr); }
+    .network-window-controls { max-height: 28dvh; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .5rem .75rem; padding: .6rem; }
+    .network-window-controls h3, .network-window-controls .collection-actions, .network-window-controls p { grid-column: 1 / -1; margin: 0; }
+    .network-window-controls > label { margin: 0; }
+    .network-window-main .network-toolbar { padding: .4rem; }
+    .network-window-main .network-toolbar button { padding: .4rem .5rem; }
+    .network-window-main .network-meta { padding: .4rem .75rem; }
+}
 .search-tabs { width: 100%; max-width: none; margin: 0 auto; display: flex; flex-wrap: wrap; gap: .5rem; padding: clamp(.75rem,2vw,1.5rem) clamp(.75rem,2vw,2rem) 0; }
 .search-tabs button { padding: .8rem 1.2rem; background: white; border: 1px solid #cbd5e1; border-radius: .75rem; font-weight: 600; color: #475569; cursor: pointer; }
 .search-tabs button[aria-selected=true] { background: #0f766e; color: white; border-color: #0f766e; }

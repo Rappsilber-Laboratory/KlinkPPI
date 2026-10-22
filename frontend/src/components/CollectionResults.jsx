@@ -3,6 +3,7 @@ import { COLORS, LABELS, filterGraph } from '../collection/analysis'
 import { analysisPDF, cx, download, graphML, sif } from '../collection/exports'
 import CollectionNetworkCanvas from './CollectionNetworkCanvas'
 import CollectionUnknownPairs from './CollectionUnknownPairs'
+import CollectionNetworkWindow from './CollectionNetworkWindow'
 
 const EMPTY_GRAPH = { nodes: [], edges: [] }
 
@@ -25,12 +26,18 @@ export default function CollectionResults({ job }) {
     const [exportBusy, setExportBusy] = useState(false)
     const [search, setSearch] = useState('')
     const [degreePage, setDegreePage] = useState(0)
+    const [networkWindowOpen, setNetworkWindowOpen] = useState(false)
     const networkRef = useRef(null)
     const graph = useMemo(() => filterGraph(rawGraph, filters), [rawGraph, filters])
     const stats = calculation?.graph === graph ? calculation.stats : null
     const calculationError = calculation?.graph === graph ? calculation.error : null
     const scoreDBs = useMemo(() => [...new Set(rawGraph.edges.flatMap(e => (e.evidence || []).filter(ev => ev.score != null).map(ev => ev.database)))], [rawGraph])
     const update = (key, value) => setFilters(current => ({ ...current, [key]: value }))
+    const appearance = { backgroundColor, labelColor, colors, widthMode, labels, nodeScale }
+    const updateAppearance = (key, value) => {
+        const setters = { backgroundColor: setBackgroundColor, labelColor: setLabelColor, colors: setColors, widthMode: setWidthMode, labels: setLabels, nodeScale: setNodeScale }
+        setters[key](value)
+    }
 
     useEffect(() => {
         const worker = new Worker(new URL('../collection/statistics.worker.js', import.meta.url), { type: 'module' })
@@ -80,7 +87,7 @@ export default function CollectionResults({ job }) {
                     <p className="collection-note">A score threshold removes evidence only from that source. Other selected sources can still support the pair. Missing publication or method data are unknown.</p>
                     <details><summary>Appearance</summary><label>Background color<input type="color" value={backgroundColor || '#10231d'} onChange={e => setBackgroundColor(e.target.value)} /></label><label>Node name color<input type="color" value={labelColor || '#ffffff'} onChange={e => setLabelColor(e.target.value)} /></label><label className="source-toggle"><input type="checkbox" checked={colors} onChange={e => setColors(e.target.checked)} />Database edge colors</label><label className="source-toggle"><input type="checkbox" checked={labels} onChange={e => setLabels(e.target.checked)} />Gene labels</label><label>Node size <output>{Math.round(nodeScale * 100)}%</output><input type="range" min="0.5" max="2.5" step="0.1" value={nodeScale} onChange={e => setNodeScale(Number(e.target.value))} /></label><label>Edge width<select value={widthMode} onChange={e => setWidthMode(e.target.value)}><option value="consensus">Database consensus count</option><option value="score">Relative source scores</option><option value="off">Uniform width</option></select></label><p className="collection-note">Drag any node to reposition it. Click an edge to open its evidence; moving near an edge does not select it.</p></details>
                 </aside>
-                <div className="network-main"><div className="network-toolbar"><div><input aria-label="Find network node" placeholder="Find gene / UniProt…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') focus() }} /><button onClick={focus} disabled={!graph.nodes.length}>Find</button></div><div><button onClick={() => networkRef.current.fit()}>Fit</button><button onClick={() => networkRef.current.rearrange()}>Rearrange</button><button onClick={e => { const separated = networkRef.current.separate(); e.currentTarget.textContent = separated ? 'Compact communities' : 'Separate communities' }}>Separate communities</button></div></div>
+                <div className="network-main"><div className="network-toolbar"><div><input aria-label="Find network node" placeholder="Find gene / UniProt…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') focus() }} /><button onClick={focus} disabled={!graph.nodes.length}>Find</button></div><div><button type="button" onClick={event => { event.currentTarget.focus(); setNetworkWindowOpen({ positions: networkRef.current.positions() }) }} disabled={!graph.nodes.length} aria-haspopup="dialog">Open full window</button><button onClick={() => networkRef.current.fit()}>Fit</button><button onClick={() => networkRef.current.rearrange()}>Rearrange</button><button onClick={e => { const separated = networkRef.current.separate(); e.currentTarget.textContent = separated ? 'Compact communities' : 'Separate communities' }}>Separate communities</button></div></div>
                     <div className="network-detail" aria-live="polite"><div className="network-detail-heading"><span>{shownDetail?.kind === 'edge' ? 'INTERACTION EVIDENCE' : 'PROTEIN INSPECTOR'}</span><strong>{shownDetail ? shownDetail.kind === 'node' ? shownDetail.data.gene : `${shownDetail.data.source} ↔ ${shownDetail.data.target}` : 'Select a protein or interaction'}</strong></div><div className="network-detail-content">{!shownDetail ? <p>Click a node or edge to inspect its details.</p> : shownDetail.kind === 'node' ? <><p>{shownDetail.data.unresolved ? 'Unresolved / skipped input — no connections' : `UniProt: ${shownDetail.data.id}`} · {shownDetail.data.species} · Taxonomy {shownDetail.data.tax_id}</p>{stats && <p>Degree: {stats.degrees.find(n => n.id === shownDetail.data.id)?.degree ?? 0}</p>}</> : <><div className="evidence-chips">{shownDetail.data.databases.map(db => <span key={db} style={{ borderColor: COLORS[db], color: COLORS[db] }}>{LABELS[db] || db}</span>)}</div><div className="collection-table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Score</th><th>Publications</th><th>Methods / direction</th></tr></thead><tbody>{shownDetail.data.evidence.map((ev, i) => <tr key={i}><td>{/^https?:\/\//.test(ev.link) ? <a href={ev.link} target="_blank" rel="noreferrer">{ev.database}</a> : ev.database}</td><td>{ev.type}<small>{ev.interaction_type}</small></td><td>{ev.score == null ? 'Unknown' : Object.entries(ev.scores || { [ev.score_name]: ev.score }).map(([key, value]) => `${key}: ${value}`).join('; ')}</td><td>{ev.publications.join(', ') || 'Unknown'}</td><td>{ev.methods.join(', ') || 'Unknown'}{ev.directed && <small>{ev.regulator} → {ev.target} · {ev.effect}</small>}</td></tr>)}</tbody></table></div></>}</div></div>
                     <div className="network-meta"><span>{graph.nodes.length.toLocaleString()} nodes</span><span>{graph.edges.length.toLocaleString()} edges</span><span>{new Set(graph.edges.flatMap(e => e.databases)).size} sources</span><span>{stats?.components.length ?? '—'} groups</span></div>
                     <div className="network-canvas"><CollectionNetworkCanvas ref={networkRef} graph={graph} backgroundColor={backgroundColor} labelColor={labelColor} colors={colors} widthMode={widthMode} labels={labels} nodeScale={nodeScale} onPick={setDetail} /></div>
@@ -92,6 +99,7 @@ export default function CollectionResults({ job }) {
             <div className="collection-actions"><span>Export filtered network:</span>{['svg', 'png', 'graphml', 'sif', 'cx', 'json'].map(format => <button key={format} onClick={() => exportGraph(format)} disabled={exportBusy || (['svg', 'png'].includes(format) && !graph.nodes.length)}>{format.toUpperCase()}</button>)}</div>
             {exportError && <p className="collection-error" role="alert">{exportError}</p>}
         </div>
+        {networkWindowOpen && <CollectionNetworkWindow initialPositions={networkWindowOpen.positions} graph={graph} title={`${job.species} · ${job.mode} network`} appearance={appearance} onAppearanceChange={updateAppearance} onClose={() => setNetworkWindowOpen(false)} />}
         {job.mode === 'induced' && <CollectionUnknownPairs key={job.job_id} job={job} graph={rawGraph} />}
         <div className="collection-card"><span className="collection-eyebrow">ANALYSIS REPORT</span><h2>Evidence, overlap and topology</h2><p className="collection-note">All statistics describe the filtered, undirected network. Isolated inputs count as components. Evidence categories follow source semantics; complex membership and functional associations do not establish direct binding.</p>
             {!stats ? <p role="status">{calculationError || 'Calculating statistics…'}</p> : <>

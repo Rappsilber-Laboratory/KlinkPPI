@@ -125,6 +125,18 @@ export default function CollectionSearch() {
         catch (err) { setError(err.message) }
         finally { setPending(false) }
     }
+    const rerun = async () => {
+        if (busy) return
+        setPending(true)
+        setError('')
+        try {
+            const data = await request(`/collection/jobs/${job.job_id}/rerun`, { method: 'POST' })
+            jobRef.current = data.job_id
+            setJob(data)
+            setPollRetry(0)
+        } catch (err) { setError(err.message) }
+        finally { setPending(false) }
+    }
     const cancel = async () => {
         try { setJob(await request(`/collection/jobs/${job.job_id}/cancel`, { method: 'POST' })); jobRef.current = null }
         catch (err) { setError(err.message) }
@@ -155,7 +167,7 @@ export default function CollectionSearch() {
             <div className="collection-actions"><button className="collection-primary" disabled={busy} type="submit">{busy ? 'Working…' : 'Resolve collection IDs'}</button>{['resolving', 'running', 'awaiting_selection'].includes(job?.status) && <button type="button" onClick={cancel}>Cancel job</button>}<span className="collection-note">No interactions are queried until you review the mappings.</span></div>
             {error && <p className="collection-error" role="alert">{error}</p>}
         </form>
-        {job && <div className="collection-card" aria-live="polite"><div className="collection-job-heading"><h3>{job.species} · {job.mode} network</h3><span className="collection-status">{job.status.replaceAll('_', ' ')}</span></div><p>{job.progress}</p>{job.database_statuses && <div className="database-progress">{Object.entries(job.database_statuses).map(([db, state]) => <span key={db} className={state.status}><i />{LABELS[db] || db}{state.total > 0 && <small>{state.completed}/{state.total}</small>}</span>)}</div>}{duplicates > 0 && <p className="collection-note">{duplicates} duplicate input rows merged.</p>}</div>}
+        {job && <div className="collection-card" aria-live="polite"><div className="collection-job-heading"><h3>{job.species} · {job.mode} network</h3><div className="collection-job-buttons"><span className="collection-status">{job.status.replaceAll('_', ' ')}</span>{job.status === 'completed' && <button type="button" onClick={rerun} disabled={busy} title="Repeat this search with the same IDs, mappings, species, databases and network mode">Rerun</button>}</div></div><p>{job.progress}</p>{job.database_statuses && <div className="database-progress">{Object.entries(job.database_statuses).map(([db, state]) => <span key={db} className={state.status}><i />{LABELS[db] || db}{state.total > 0 && <small>{state.completed}/{state.total}</small>}</span>)}</div>}{duplicates > 0 && <p className="collection-note">{duplicates} duplicate input rows merged.</p>}</div>}
         {job?.status === 'awaiting_selection' && <div className="collection-card">
             <h3>Review ID resolution</h3><p className="collection-note">Multiple matches require a choice. Skipped and unresolved IDs stay isolated in the network.</p>
             <div className="collection-table-wrap"><table><thead><tr><th>Input</th><th>Status</th><th>UniProt mapping</th></tr></thead><tbody>{job.resolution.map(row => <tr key={row.input}><td>{row.input}<small>{row.input_type}</small></td><td>{row.status}</td><td>{row.candidates.length > 1 ? <select aria-label={`Mapping for ${row.input}`} value={choices[row.input] ?? '__choose__'} onChange={e => setChoices(current => ({ ...current, [row.input]: e.target.value || null }))}><option value="__choose__" disabled>Choose a match…</option><option value="">Skip this ID</option>{row.candidates.map(c => <option value={c.id} key={c.id}>{c.gene} · {c.id} · {c.reviewed ? 'reviewed' : 'unreviewed'}</option>)}</select> : row.candidates.length === 1 ? `${row.candidates[0].gene} · ${row.candidates[0].id}` : row.error || 'No match in the selected species'}</td></tr>)}</tbody></table></div>

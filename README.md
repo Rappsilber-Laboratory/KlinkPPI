@@ -258,6 +258,12 @@ Integrated sources can overlap; source warnings are included in the report. Rela
 score widths scale each source/score series within its visible range and average the
 result as a visual cue. Raw scores are not compared as probabilities.
 
+Click **Open full window** beside the network to open a full-screen image studio
+using the current filtered network and layout. Adjust the background, font color,
+node size, labels and edge appearance, then download PNG (current view) or SVG
+(whole network). Appearance changes also apply to the results page. Close the
+window with its close button or Escape.
+
 Statistics update for the filtered graph in a background worker: node/edge counts,
 unique/shared database pairs, Jaccard overlaps, degrees/hubs, connected components,
 mean local clustering, score histograms and shared/database-only interactors.

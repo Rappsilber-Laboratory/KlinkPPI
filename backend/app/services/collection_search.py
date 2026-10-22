@@ -198,6 +198,20 @@ def run_job(job_id, choices):
     return snapshot(job_id)
 
 
+def rerun_job(job_id):
+    """Repeat database queries with the original inputs and reviewed mappings."""
+    with LOCK:
+        job = JOBS[job_id]
+        if job["status"] != "completed":
+            raise ValueError("Only a completed collection can be rerun")
+        job.update(status="running", progress="Querying selected databases again…", graph=None,
+                   warnings=[], cancel=Event(), created_at=time(),
+                   database_statuses={db: {"status": "pending", "completed": 0, "total": 0, "errors": 0}
+                                      for db in job["databases"]})
+    POOL.submit(_network_job, job_id)
+    return snapshot(job_id)
+
+
 def cancel_job(job_id):
     with LOCK:
         job = JOBS[job_id]
