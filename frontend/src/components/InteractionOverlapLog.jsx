@@ -19,6 +19,12 @@ const DATABASE_STYLES = {
   Predictomes: {
     chip: 'bg-indigo-100 text-indigo-800 border-indigo-200',
   },
+  ComplexPortal: { chip: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+  Reactome: { chip: 'bg-lime-100 text-lime-800 border-lime-200' },
+  Signor: { chip: 'bg-red-100 text-red-800 border-red-200' },
+  Hippie: { chip: 'bg-teal-100 text-teal-800 border-teal-200' },
+  HuMap: { chip: 'bg-violet-100 text-violet-800 border-violet-200' },
+  Mint: { chip: 'bg-pink-100 text-pink-800 border-pink-200' },
 }
 
 const getDbEntries = (dbName, dbValue) => {
@@ -99,7 +105,8 @@ const buildOverlapEntries = (results) => {
     for (const entry of entries) {
       const geneName = getInteractorGeneName(entry)
       const interactorId = getInteractorId(entry)
-      const key = normalizeKey(geneName || interactorId)
+      // Stable accessions are a safer cross-database join key than display names.
+      const key = normalizeKey(interactorId || geneName)
       if (!key) {
         continue
       }

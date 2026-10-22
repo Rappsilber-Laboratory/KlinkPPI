@@ -1,5 +1,5 @@
-import DBHeader from './DBHeader'
 import DBTable from './DBTable'
+import DatabaseResultCard from './DatabaseResultCard'
 
 const PredictomesResults = ({ data }) => {
     const info = data.Predictomes[0].info
@@ -32,8 +32,7 @@ const PredictomesResults = ({ data }) => {
     ))
 
     return (
-        <div className="bg-white  shadow-md mb-8 overflow-hidden">
-            <DBHeader name="Predictomes" subtitle="Structural proteome-wide interaction predictions" count={Interactions.length} color="bg-indigo-700" databaseLink={info.Database_Link} />
+        <DatabaseResultCard name="Predictomes" subtitle="Structural proteome-wide interaction predictions" count={Interactions.length} color="bg-indigo-700" databaseLink={info.Database_Link}>
             <div className="p-6">
     {Interactions.length > 0 ? (
         <DBTable headers={headers} rows={rows} />
@@ -42,8 +41,8 @@ const PredictomesResults = ({ data }) => {
             No interactions found in Predictomes.
         </div>
     )}
-</div>
-        </div>
+            </div>
+        </DatabaseResultCard>
     )
 }
 

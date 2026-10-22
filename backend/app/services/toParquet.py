@@ -1,6 +1,18 @@
 def flatten_results(results, selected_databases):
     rows = []
+    extended_databases = {"ComplexPortal", "Reactome", "Signor", "Hippie", "HuMap", "Mint"}
     for data in results[1]['output']:
+
+        for database_name in extended_databases:
+            if database_name not in data or database_name not in selected_databases:
+                continue
+            database_data = data[database_name]
+            if not isinstance(database_data, list) or len(database_data) < 2:
+                continue
+            for interaction in database_data[1].get('Interactors', []):
+                temp = dict(interaction)
+                temp["Database"] = database_name
+                rows.append(temp)
 
         if "BioGrid" in data and "BioGrid" in selected_databases:
             biogrid_interactions=data["BioGrid"][1]['Interactors']
