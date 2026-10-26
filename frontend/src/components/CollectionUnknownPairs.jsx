@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { unknownInputPairs } from '../collection/analysis'
+import CollectionProteinActions from './CollectionProteinActions'
 import PairAlignmentResult from './PairAlignmentResult'
 import PairAlignmentDetails from './PairAlignmentDetails'
 
@@ -16,6 +17,20 @@ function SharedTerms({ result, source, target }) {
 }
 
 export default function CollectionUnknownPairs({ job, graph }) {
+    const sequences = useRef(new Map())
+    const getSequence = accession => {
+        const key = `${job.job_id}:${accession}`
+        if (!sequences.current.has(key)) {
+            const lookup = fetch(`${API}/collection/jobs/${encodeURIComponent(job.job_id)}/sequence?${new URLSearchParams({ accession })}`)
+                .then(async response => {
+                    const data = await response.json()
+                    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'UniProt sequence lookup failed.')
+                    return data
+                }).catch(error => { sequences.current.delete(key); throw error })
+            sequences.current.set(key, lookup)
+        }
+        return sequences.current.get(key)
+    }
     const pairs = useMemo(() => unknownInputPairs(graph), [graph])
     const [query, setQuery] = useState('')
     const [page, setPage] = useState(0)
@@ -100,6 +115,7 @@ export default function CollectionUnknownPairs({ job, graph }) {
         <h2>Pairs with no interaction found</h2>
         <p>{pairs.length.toLocaleString()} pairs among your resolved input proteins have no interaction evidence in this search. Check GO for shared annotations or align their UniProt protein sequences.</p>
         <p className="collection-note">This list uses the full search results before display filters. Missing evidence does not mean the proteins cannot interact. Shared GO terms describe common annotations and do not establish a protein interaction.</p>
+        <p className="collection-note">Search BLASTP opens NCBI Protein BLAST with the FASTA and job title filled in; choose settings and start the search there. Copy FASTA fetches the same validated UniProt sequence. Find similar structures opens AlphaFold: choose “Similar structures” to search with Foldseek. If no model is available, Copy FASTA and paste it into the <a href="https://search.foldseek.com/" target="_blank" rel="noopener noreferrer">Foldseek server</a>.</p>
         {(graph.truncated || job.warnings?.length > 0) && <p className="collection-warning">Search coverage may be incomplete; review the coverage notes above before interpreting these pairs.</p>}
         {!pairs.length ? <p>{graph.nodes.filter(node => node.input && !node.unresolved).length < 2 ? 'At least two resolved input proteins are needed to compare pairs.' : 'Every resolved input pair has interaction evidence in this search.'}</p> : <>
             <label htmlFor="unknown-pair-search">Find a protein in these pairs</label>
@@ -110,7 +126,7 @@ export default function CollectionUnknownPairs({ job, graph }) {
                 const alignment = alignments[pair.key]
                 const detailsId = `alignment-${job.job_id}-${pair.source.id}-${pair.target.id}`
                 return <Fragment key={pair.key}>
-                    <tr><td>{pair.source.gene}<small>{pair.source.id}</small></td><td>{pair.target.gene}<small>{pair.target.id}</small></td><td><button type="button" disabled={Boolean(pending)} aria-label={`${result?.data ? 'Toggle shared GO terms' : 'Check GO'} for ${pair.source.gene} and ${pair.target.gene}`} aria-expanded={Boolean(open[pair.key])} onClick={() => result?.data ? setOpen(current => ({ ...current, [pair.key]: !current[pair.key] })) : check(pair)}>{loading ? 'Checking GO…' : result?.data ? `${open[pair.key] ? 'Hide' : 'Show'} ${result.data.shared_terms.length} shared terms` : result?.error ? 'Retry GO' : 'Check GO'}</button></td><td className="pair-alignment-cell">
+                    <tr><td>{pair.source.gene}<small>{pair.source.id}</small><CollectionProteinActions protein={pair.source} species={job.species} getSequence={getSequence} /></td><td>{pair.target.gene}<small>{pair.target.id}</small><CollectionProteinActions protein={pair.target} species={job.species} getSequence={getSequence} /></td><td><button type="button" disabled={Boolean(pending)} aria-label={`${result?.data ? 'Toggle shared GO terms' : 'Check GO'} for ${pair.source.gene} and ${pair.target.gene}`} aria-expanded={Boolean(open[pair.key])} onClick={() => result?.data ? setOpen(current => ({ ...current, [pair.key]: !current[pair.key] })) : check(pair)}>{loading ? 'Checking GO…' : result?.data ? `${open[pair.key] ? 'Hide' : 'Show'} ${result.data.shared_terms.length} shared terms` : result?.error ? 'Retry GO' : 'Check GO'}</button></td><td className="pair-alignment-cell">
                         {alignment && <PairAlignmentResult alignment={alignment} isOpen={alignmentOpen[pair.key]} detailsId={detailsId} onToggle={() => setAlignmentOpen(current => ({ ...current, [pair.key]: !current[pair.key] }))} />}
                         {(!alignment || alignment.status === 'failed') && <button type="button" disabled={Boolean(activeAlignment)} aria-label={`Align sequences for ${pair.source.gene} and ${pair.target.gene}`} onClick={() => alignPair(pair)}>{alignment?.status === 'failed' ? 'Retry alignment' : 'Align seqs'}</button>}
                     </td></tr>

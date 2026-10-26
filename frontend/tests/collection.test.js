@@ -1,3 +1,4 @@
+import { blastFields } from '../src/collection/proteinActions.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { computeStatistics, filterGraph, parseIdentifiers, unknownInputPairs } from '../src/collection/analysis.js'
@@ -53,7 +54,7 @@ test('headerless lists handle quotes, BOM, CRLF, duplicates and reject multi-col
     assert.deepEqual(parseIdentifiers('\uFEFF"TP53"\r\nP04637\r\nTP53\r\n'), { ids: ['TP53', 'P04637'], duplicates: 1 })
     assert.throws(() => parseIdentifiers('gene,score\nTP53,0.8'), /one identifier per line/)
     assert.throws(() => parseIdentifiers(' \n'), /at least one/)
-    assert.throws(() => parseIdentifiers(Array.from({ length: 201 }, (_, i) => `gene${i}`).join('\n')), /200/)
+    assert.throws(() => parseIdentifiers(Array.from({ length: 21 }, (_, i) => `gene${i}`).join('\n')), /20/)
 })
 
 test('filters preserve isolated inputs and remove orphan neighbors', () => {
@@ -124,4 +125,23 @@ test('CX has numeric node references, typed source lists, and valid framing', ()
     for (const edge of cxEdges) { assert.ok(ids.has(edge.s)); assert.ok(ids.has(edge.t)) }
     assert.equal(content.at(-1).status[0].success, true)
     assert.equal(content.find(item => item.edgeAttributes).edgeAttributes[0].d, 'list_of_string')
+})
+
+ test('collection limit counts distinct IDs after merging duplicates for pasted and file delimiters', () => {
+    for (const separator of ['\n', '\r\n']) {
+        const ids = Array.from({ length: 20 }, (_, i) => `gene${i}`)
+        const parsed = parseIdentifiers([...ids, ...ids].join(separator))
+        assert.equal(parsed.ids.length, 20)
+        assert.equal(parsed.duplicates, 20)
+        assert.throws(() => parseIdentifiers([...ids, 'extra'].join(separator)), /20 distinct/)
+    }
+})
+
+test('BLAST prefill preserves long FASTA and opens the settings form without submitting a search', () => {
+    const fasta = '>P04637 TP53\n' + 'A'.repeat(40000)
+    const fields = blastFields({ fasta, gene: 'TP53', accession: 'P04637' }, 'Homo sapiens')
+    assert.equal(fields.QUERY, fasta)
+    assert.equal(fields.CMD, 'Web')
+    assert.equal(fields.PAGE, 'Proteins')
+    assert.match(fields.JOB_TITLE, /TP53.*P04637.*Homo sapiens/)
 })

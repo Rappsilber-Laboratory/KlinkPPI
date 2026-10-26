@@ -426,7 +426,7 @@ def resolve_collection_database(database_name: str, uniprotkb_id: str, tax_id: s
 
 
 class CollectionRequest(BaseModel):
-    identifiers: list[str] = Field(min_length=1, max_length=collection_search.MAX_INPUTS)
+    identifiers: list[str] = Field(min_length=1, description="Up to 20 distinct gene/protein identifiers after trimming and duplicate merging.")
     species_name: str = Field(min_length=1, max_length=200)
     tax_id: Optional[str] = None
     selected_databases: list[str] = Field(min_length=1, max_length=12)
@@ -444,8 +444,10 @@ def start_collection(request: CollectionRequest):
     if not tax_id or not species:
         raise HTTPException(status_code=400, detail="Select a supported species before collection search")
     identifiers = list(dict.fromkeys(token.strip() for token in request.identifiers if token.strip()))
+    if len(identifiers) > collection_search.MAX_INPUTS:
+        raise HTTPException(status_code=400, detail="Use up to 20 distinct identifiers per collection; duplicates are merged.")
     if not identifiers or any(len(token) > 100 for token in identifiers):
-        raise HTTPException(status_code=400, detail="Provide 1–200 identifiers, each at most 100 characters")
+        raise HTTPException(status_code=400, detail="Provide 1–20 distinct identifiers, each at most 100 characters")
     supported = get_supported_databases(tax_id)
     databases = list(dict.fromkeys(request.selected_databases))
     invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
@@ -505,6 +507,20 @@ def collection_shared_go(job_id: str, source: str = Query(min_length=1, max_leng
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except collection_go.GOLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/sequence")
+def collection_sequence(job_id: str, accession: str = Query(min_length=1, max_length=100)):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_alignment.collection_sequence(job, accession)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except collection_alignment.SequenceLookupError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
 

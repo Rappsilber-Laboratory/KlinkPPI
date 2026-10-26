@@ -27,7 +27,7 @@ export function parseIdentifiers(text) {
     }
     const ids = [...new Set(result)]
     if (!ids.length) throw new Error('Paste or upload at least one identifier.')
-    if (ids.length > 200) throw new Error('Use up to 200 distinct identifiers per collection.')
+    if (ids.length > 20) throw new Error('Use up to 20 distinct identifiers per collection.')
     return { ids, duplicates: result.length - ids.length }
 }
 

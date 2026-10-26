@@ -23,6 +23,17 @@ def response(entries, next_url=None):
 
 
 class ResolutionTests(unittest.TestCase):
+    @patch.object(cs.POOL, 'submit')
+    def test_collection_limit_counts_distinct_trimmed_inputs(self, submit):
+        ids = [f"gene{i}" for i in range(20)]
+        job = cs.create_job(ids + [f" {value} " for value in ids], "9606", "Human", ["IntAct"], "auto", "induced", Mock())
+        try:
+            self.assertEqual(cs.JOBS[job['job_id']]['tokens'], ids)
+            with self.assertRaisesRegex(ValueError, '20 distinct'):
+                cs.create_job(ids + ['extra'], "9606", "Human", ["IntAct"], "auto", "induced", Mock())
+        finally:
+            cs.JOBS.pop(job['job_id'], None)
+
     @patch.object(cs.requests, 'get')
     def test_paginated_mixed_ids_species_and_review_status(self, get):
         get.side_effect = [response([entry("P04637"), entry("X00000", tax=10090)], "https://rest.uniprot.org/next"), response([entry("E9PFT5", reviewed=False)])]

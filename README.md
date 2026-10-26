@@ -214,11 +214,34 @@ Complete-species Parquet exports include these fields when all databases are sel
 Open **Collection search** beside **Single searches**. Choose a supported species from
 its suggestions, paste a list or upload a CSV/TSV/TXT file, and select the source
 databases and network mode. Files contain one identifier per line, without a header
-or extra columns. Collections support up to 200 distinct identifiers; duplicate rows
+or extra columns. Collections support up to 20 distinct identifiers; duplicate rows
 are merged. Mixed lists detect UniProt accessions/entry names, gene symbols, Ensembl
 IDs and NCBI GeneIDs. Select an explicit identifier type for gene symbols that resemble
 another ID format. UniProt isoforms resolve to their primary accession, so analysis
 runs at the protein-entry level.
+
+The input is labeled **Gene / protein list (up to 20 entries)**. The 20 distinct
+identifier limit applies to pasted lists, uploaded CSV/TSV/TXT files, and
+`POST /collection/jobs` API requests after trimming and duplicate merging.
+Over-limit requests return a clear error before a job starts.
+
+Each protein in **Pairs with no interaction found** offers **Search BLASTP ↗**,
+**Copy FASTA**, and **Find similar structures ↗**. Sequences are fetched on demand
+via `GET /collection/jobs/{job_id}/sequence?accession=P04637`, restricted to resolved
+collection inputs, and checked against the exact UniProt accession and collection
+taxonomy. Successful sequences are reused across repeated proteins; failed lookups
+can be retried. FASTA headers contain the accession and collection gene name.
+Clipboard failures display selectable FASTA text.
+
+BLAST opens the [NCBI Protein BLAST form](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE=Proteins)
+using a form POST with the FASTA and a descriptive job title. Users choose settings
+and start the search themselves. If the browser blocks the tab, allow popups and
+retry, or copy FASTA into Protein BLAST. No alignment length limit applies to FASTA
+copying or BLAST prefill.
+
+Find similar structures opens the protein's AlphaFold entry. Choose **Similar
+structures** there to search with Foldseek. If no AlphaFold model is available,
+use **Copy FASTA** and paste it into the [Foldseek server](https://search.foldseek.com/).
 
 **Resolve collection IDs** validates identifiers against the selected species using
 UniProt. Review the candidate table before running: ambiguous IDs require an explicit

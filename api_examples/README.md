@@ -33,3 +33,6 @@ They do not generate plots.
 
 Collection identifiers with multiple UniProt matches require explicit choices. See
 the commented `choices` argument in `collection_search.py`.
+
+Collection requests accept up to 20 distinct gene/protein identifiers. Duplicate
+rows are merged before applying the limit; requests above the limit return an error.

@@ -49,8 +49,6 @@ def protein_sequence(accession, tax_id, cache_hour):
         sequence = entry.get("sequence", {}).get("value", "").upper()
         if not sequence:
             raise SequenceLookupError(f"UniProt did not report a sequence for {accession}.")
-        if len(sequence) > MAX_LENGTH:
-            raise SequenceLookupError(f"{accession} exceeds the interactive limit of {MAX_LENGTH:,} residues.")
         if any(residue not in MATRIX.alphabet + "UO" for residue in sequence):
             raise SequenceLookupError(f"The sequence for {accession} contains unsupported residue symbols.")
         return sequence
@@ -58,9 +56,24 @@ def protein_sequence(accession, tax_id, cache_hour):
         raise SequenceLookupError(f"Could not fetch the UniProt sequence for {accession}. Please retry.") from exc
 
 
+def collection_sequence(job, accession):
+    if job["status"] != "completed":
+        raise ValueError("Sequence lookup requires a completed collection.")
+    node = next((node for node in job["graph"]["nodes"]
+                 if node["id"] == accession and node.get("input") and not node.get("unresolved")), None)
+    if node is None:
+        raise ValueError("Choose a resolved input protein from this collection.")
+    sequence = protein_sequence(accession, job["tax_id"], int(time() // TTL))
+    gene = " ".join(str(node.get("gene") or accession).split())
+    fasta = f">{accession} {gene}\n" + "\n".join(sequence[i:i + 60] for i in range(0, len(sequence), 60)) + "\n"
+    return {"accession": accession, "gene": gene, "tax_id": job["tax_id"], "sequence": sequence, "fasta": fasta}
+
+
 def align_sequences(source_sequence, target_sequence):
     if not source_sequence or not target_sequence:
         raise ValueError("Both protein sequences must contain residues.")
+    if max(len(source_sequence), len(target_sequence)) > MAX_LENGTH:
+        raise ValueError(f"Interactive alignment is limited to {MAX_LENGTH:,} residues per sequence.")
     if len(source_sequence) * len(target_sequence) > MAX_CELLS:
         raise ValueError("This pair is too large for interactive alignment (25 million sequence-position pairs maximum).")
     aligner = Align.PairwiseAligner(mode="global", substitution_matrix=MATRIX, open_gap_score=-10, extend_gap_score=-0.5)

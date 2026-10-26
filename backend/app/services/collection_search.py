@@ -14,7 +14,7 @@ import re
 import requests
 
 API = "https://rest.uniprot.org/uniprotkb"
-MAX_INPUTS = 200
+MAX_INPUTS = 20
 MAX_EDGES = 50000
 MAX_ENDPOINTS = 10000
 MAX_JOBS = 12
@@ -146,6 +146,9 @@ def patch(job_id, **values):
 
 
 def create_job(tokens, tax_id, species, databases, input_type, mode, resolver):
+    tokens = list(dict.fromkeys(token.strip() for token in tokens if token.strip()))
+    if not tokens or len(tokens) > MAX_INPUTS:
+        raise ValueError("Use 1–20 distinct identifiers per collection; duplicates are merged.")
     with LOCK:
         now = time()
         for key in list(JOBS):

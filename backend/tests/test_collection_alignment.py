@@ -21,6 +21,21 @@ class AlignmentTests(unittest.TestCase):
         ca.TASKS.clear()
         ca.protein_sequence.cache_clear()
 
+    @patch.object(ca.requests, "get")
+    def test_collection_fasta_is_validated_wrapped_and_shared_across_actions(self, get):
+        get.return_value = sequence_response("P04637", "A" * 80)
+        first = ca.collection_sequence(self.job, "P04637")
+        second = ca.collection_sequence(self.job, "P04637")
+        self.assertEqual(first, second)
+        self.assertTrue(first["fasta"].startswith(">P04637 "))
+        self.assertEqual([len(line) for line in first["fasta"].splitlines()[1:]], [60, 20])
+        self.assertEqual(get.call_count, 1)
+        with self.assertRaises(ValueError):
+            ca.collection_sequence(self.job, "P99999")
+        self.job["status"] = "running"
+        with self.assertRaises(ValueError):
+            ca.collection_sequence(self.job, "P04637")
+
     def test_identical_sequences_have_expected_blosum_score_and_identity(self):
         result = ca.align_sequences("ACDE", "ACDE")
         self.assertEqual(result["score"], 24)
@@ -77,8 +92,8 @@ class AlignmentTests(unittest.TestCase):
             with self.assertRaises(ca.SequenceLookupError):
                 ca.protein_sequence("P04637", "9606", 1)
         get.return_value = sequence_response("P04637", "AAAA")
-        with patch.object(ca, "MAX_LENGTH", 3), self.assertRaisesRegex(ca.SequenceLookupError, "limit"):
-            ca.protein_sequence("P04637", "9606", 1)
+        with patch.object(ca, "MAX_LENGTH", 3), self.assertRaisesRegex(ValueError, "limited"):
+            ca.align_sequences("AAAA", "AA")
 
     @patch.object(ca.requests, "get")
     def test_failed_sequence_fetch_can_be_retried(self, get):

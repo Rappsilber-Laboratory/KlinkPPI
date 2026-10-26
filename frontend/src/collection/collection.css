@@ -157,3 +157,8 @@
 .search-tabs button[aria-selected=true] { background: #0f766e; color: white; border-color: #0f766e; }
 @media(max-width: 900px) { .network-workspace { grid-template-columns: 1fr; } .network-controls { border-right: 0; border-bottom: 1px solid #e2e8f0; } .network-controls > fieldset { display: flex; flex-wrap: wrap; gap: .5rem 1rem; } .network-controls legend { width: 100%; } .network-canvas { height: clamp(380px,58vh,620px); } }
 @media(max-width: 640px) { .collection-shell { padding: .75rem .5rem 2rem; } .collection-card { padding: .85rem; } .collection-grid { grid-template-columns: 1fr; gap: 1rem; } .database-options > div { grid-template-columns: repeat(2,minmax(0,1fr)); } .collection-shell h2 { font-size: 1.3rem; } .search-tabs { padding: .75rem .5rem 0; } .search-tabs button { flex: 1 1 auto; } .network-toolbar { align-items: stretch; } .network-toolbar > div { width: 100%; } .network-toolbar button { flex: 1 1 auto; } .network-detail { grid-template-columns: 1fr; max-height: 40vh; } .network-detail-heading { border-right: 0; border-bottom: 1px solid #d9ddd8; } .network-canvas { height: clamp(340px,55vh,520px); } }
+
+.protein-actions { margin-top: .6rem; min-width: 180px; max-width: 340px; white-space: normal; }
+.protein-action-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.protein-actions p, .protein-actions a { font-size: .8rem; }
+.protein-actions textarea { width: 100%; font-family: monospace; }
