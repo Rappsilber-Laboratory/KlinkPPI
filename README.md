@@ -358,4 +358,11 @@ result = client.single_search("Q07889", tax_id="9606", databases=["String", "Int
 client.export_single_csv(result, "sos1_interactions.csv")
 ```
 
-See `python_api_example.py` for complete-species and collection examples.
+Start with `python python_api_example.py --help` or the equivalent `api_example.py`.
+Choose `species`, `gene`, `single`, `complete-species`, `collection` or `followups`;
+importing the examples performs no requests. See [the API examples guide](api_examples/README.md)
+for the web/API feature matrix, mapping review and resume, cancellation, source-aware
+filters/statistics, FASTA/BLAST/Foldseek, GO/alignment, and all data export formats.
+`GET /collection/jobs/{job_id}/analysis` exposes the web network filters and
+statistics for completed collections. Browser-rendered SVG/PNG and analysis PDF
+remain available through the web app.

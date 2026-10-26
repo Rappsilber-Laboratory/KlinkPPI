@@ -23,11 +23,12 @@ class AlignmentTests(unittest.TestCase):
 
     @patch.object(ca.requests, "get")
     def test_collection_fasta_is_validated_wrapped_and_shared_across_actions(self, get):
+        self.job["graph"]["nodes"][0]["gene"] = "TP53"
         get.return_value = sequence_response("P04637", "A" * 80)
         first = ca.collection_sequence(self.job, "P04637")
         second = ca.collection_sequence(self.job, "P04637")
         self.assertEqual(first, second)
-        self.assertTrue(first["fasta"].startswith(">P04637 "))
+        self.assertTrue(first["fasta"].startswith(">P04637 TP53\n"))
         self.assertEqual([len(line) for line in first["fasta"].splitlines()[1:]], [60, 20])
         self.assertEqual(get.call_count, 1)
         with self.assertRaises(ValueError):
@@ -35,6 +36,12 @@ class AlignmentTests(unittest.TestCase):
         self.job["status"] = "running"
         with self.assertRaises(ValueError):
             ca.collection_sequence(self.job, "P04637")
+
+    @patch.object(ca.requests, "get")
+    def test_fasta_lookup_accepts_sequences_above_alignment_limit(self, get):
+        get.return_value = sequence_response("P04637", "A" * (ca.MAX_LENGTH + 1))
+        result = ca.collection_sequence(self.job, "P04637")
+        self.assertEqual(len(result["sequence"]), ca.MAX_LENGTH + 1)
 
     def test_identical_sequences_have_expected_blosum_score_and_identity(self):
         result = ca.align_sequences("ACDE", "ACDE")

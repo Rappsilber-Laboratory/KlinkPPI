@@ -35,3 +35,8 @@ frontend/node_modules/*
 !backend/tests/test_collection_api.py
 
 frontend/dist/
+
+# Public API client regression tests and generated example output
+!backend/tests/test_api_client.py
+api_example_outputs/
+api_downloads/

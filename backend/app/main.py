@@ -28,7 +28,7 @@ from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
-from app.services import collection_search, collection_go, collection_alignment
+from app.services import collection_search, collection_go, collection_alignment, collection_analysis
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -494,6 +494,28 @@ def cancel_collection(job_id: str):
         return collection_search.cancel_job(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection job not found or expired")
+
+
+@app.get("/collection/jobs/{job_id}/analysis")
+def collection_network_analysis(
+    job_id: str,
+    databases: Optional[List[str]] = Query(default=None),
+    evidence_type: Literal["all", "direct", "functional", "predicted"] = "all",
+    method: str = "",
+    score_database: str = "",
+    min_score: Optional[float] = Query(default=None, allow_inf_nan=False),
+    min_publications: int = Query(default=0, ge=0),
+):
+    # Omitted databases means every searched source; an empty value means none.
+    selected = None if databases is None else [db for db in databases if db]
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_analysis.analyze(job, selected, evidence_type, method, score_database, min_score, min_publications)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/collection/jobs/{job_id}/shared-go")

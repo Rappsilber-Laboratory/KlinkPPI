@@ -1,18 +1,30 @@
-from klinkppi import KlinkPPIClient
+"""Choose one HTTP API workflow; importing this module performs no work.
 
-client = KlinkPPIClient("http://127.0.0.1:8000")
+Run `python python_api_example.py --help`. Large complete-species searches are
+explicitly selected rather than running alongside every small example.
+"""
+import argparse
+from importlib import import_module
 
-# Single-protein search and tabular export.
-single = client.single_search("Q07889", tax_id="9606", databases=["String", "IntAct"])
-client.export_single_csv(single, "single_interactions.csv")
+WORKFLOWS = {
+    "species": "species_lookup", "gene": "gene_lookup", "single": "single_search",
+    "complete-species": "complete_species_search", "collection": "collection_search",
+    "followups": "collection_followups",
+}
 
-# Complete-species job and server-generated Parquet export.
-species = client.species_search(tax_id="9606", databases=["String", "IntAct"])
-client.download_species(species, "human_interactions.parquet")
 
-# Collection job and node/edge CSV exports (no visualization).
-collection = client.collection_search(
-    ["P00533", "P62993", "Q07889"], species_name="Homo sapiens", tax_id="9606",
-    databases=["String", "IntAct"], mode="induced",
-)
-client.export_collection_csv(collection, "collection_output")
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("workflow", choices=WORKFLOWS, nargs="?", default="single")
+    args, remaining = parser.parse_known_args(argv)
+    module = import_module(f"api_examples.{WORKFLOWS[args.workflow]}")
+    if args.workflow in {"gene", "complete-species", "collection", "followups"}:
+        module.main(remaining)
+    else:
+        if remaining:
+            parser.error("This workflow has no additional arguments")
+        module.main()
+
+
+if __name__ == "__main__":
+    main()
