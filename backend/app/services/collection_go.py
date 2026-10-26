@@ -48,15 +48,19 @@ def protein_go(accession, tax_id, cache_hour):
         raise GOLookupError(f"Could not retrieve GO annotations for {accession} from UniProt. Please retry.") from exc
 
 
-def shared_go(job, source, target):
+def validate_unknown_pair(job, source, target):
     if job["status"] != "completed" or job["mode"] != "induced":
-        raise ValueError("GO comparison requires a completed induced network.")
+        raise ValueError("Pair comparison requires a completed induced network.")
     graph = job["graph"]
     nodes = {node["id"]: node for node in graph["nodes"] if node.get("input") and not node.get("unresolved")}
     if source == target or source not in nodes or target not in nodes:
         raise ValueError("Choose two distinct resolved input proteins from this network.")
     if any({edge["source"], edge["target"]} == {source, target} for edge in graph["edges"]):
         raise ValueError("This pair already has interaction evidence in the search results.")
+
+
+def shared_go(job, source, target):
+    validate_unknown_pair(job, source, target)
     hour = int(time() // 3600)
     left, right = [protein_go(accession, job["tax_id"], hour) for accession in (source, target)]
     shared = [{"id": term_id, "name": left[term_id]["name"], "category": left[term_id]["category"],

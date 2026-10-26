@@ -243,6 +243,30 @@ The API exposes this comparison through
 induced job. Both accessions must be resolved inputs without an existing edge in
 that job. UniProt failures return a retryable error rather than an empty comparison.
 
+The **Alignment** column has an **Align seqs** button for each unknown pair. On click,
+the backend fetches full UniProt protein-entry sequences, checks species and accessions,
+and computes a global pairwise alignment. A progress bar reports three completed stages:
+first sequence, second sequence, alignment. The result includes raw score, percent identity
+(identical residues / all alignment columns, including gaps), and an expandable alignment
+panel spanning the full width beneath the pair. Residues are colored by amino-acid
+property with a legend; identity/substitution markers and original residue positions
+help read the alignment. Long alignments scroll within the panel.
+Failures show a retry action rather than a zero score.
+
+Alignment uses Biopython 1.88 `PairwiseAligner` with Gotoh global alignment
+(Needleman–Wunsch with affine gaps), BLOSUM62, gap open penalty 10 and extension
+penalty 0.5. A gap of length L costs `10 + (L - 1) * 0.5`; terminal gaps use the
+same penalties. U/O residues are scored as X while their original letters are retained
+in the output. B/Z/X use BLOSUM62 scores. The method and parameters appear below the
+pair list and in each expanded result. Sequence similarity does not establish an interaction.
+Sequences are cached for up to one hour. Alignments run with two workers, at most 64
+retained tasks, a 20,000-residue limit per sequence and 25 million sequence-position
+pairs per alignment. Larger pairs fail explicitly rather than returning partial scores.
+
+Use `POST /collection/jobs/{job_id}/alignments` with `source` and `target` accessions,
+then poll `GET /collection/jobs/{job_id}/alignments/{alignment_id}` for stage progress
+and results. The same unknown-pair restrictions as the GO comparison apply.
+
 The custom Canvas network supports dragging, zooming, searching by gene/accession,
 community separation, node details and click-based evidence inspection. Filter source databases, evidence category,
 reported publication count, experimental method and raw source scores. Publication

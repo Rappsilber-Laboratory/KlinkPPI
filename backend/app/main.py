@@ -28,7 +28,7 @@ from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
-from app.services import collection_search, collection_go
+from app.services import collection_search, collection_go, collection_alignment
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -506,3 +506,30 @@ def collection_shared_go(job_id: str, source: str = Query(min_length=1, max_leng
         raise HTTPException(status_code=400, detail=str(exc))
     except collection_go.GOLookupError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+class PairAlignmentRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=100)
+    target: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/collection/jobs/{job_id}/alignments", status_code=202)
+def start_pair_alignment(job_id: str, request: PairAlignmentRequest):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_alignment.start(job, request.source, request.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/alignments/{alignment_id}")
+def pair_alignment_status(job_id: str, alignment_id: str):
+    try:
+        return collection_alignment.snapshot(alignment_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Alignment not found or expired")

@@ -31,5 +31,6 @@ frontend/node_modules/*
 !backend/tests/test_collection_search.py
 !backend/tests/test_collection_evidence.py
 !backend/tests/test_collection_go.py
+!backend/tests/test_collection_alignment.py
 
 frontend/dist/

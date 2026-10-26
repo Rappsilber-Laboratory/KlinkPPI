@@ -2,6 +2,27 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { computeStatistics, filterGraph, parseIdentifiers, unknownInputPairs } from '../src/collection/analysis.js'
 import { cx, graphML, sif, xml } from '../src/collection/exports.js'
+import { alignmentBlocks, residueGroup } from '../src/collection/alignment.js'
+
+test('alignment display counts original residue positions through gaps and across blocks', () => {
+    const blocks = alignmentBlocks('AC--DEFG', 'A-TK--FG', 4)
+    assert.deepEqual(blocks.map(({ sourceStart, sourceEnd, targetStart, targetEnd, markers }) =>
+        ({ sourceStart, sourceEnd, targetStart, targetEnd, markers })), [
+        { sourceStart: 1, sourceEnd: 2, targetStart: 1, targetEnd: 3, markers: '|   ' },
+        { sourceStart: 3, sourceEnd: 6, targetStart: 4, targetEnd: 5, markers: '  ||' },
+    ])
+    const gaps = alignmentBlocks('----AA', 'ACDEAT', 4)
+    assert.equal(gaps[0].sourceStart, null)
+    assert.equal(gaps[1].sourceStart, 1)
+    assert.equal(gaps[1].targetStart, 5)
+    assert.equal(gaps[1].markers, '|·')
+})
+
+test('alignment residue colors distinguish properties, gaps and ambiguous residues', () => {
+    for (const [residue, group] of Object.entries({ A: 'hydrophobic', S: 'polar', D: 'acidic', K: 'basic', G: 'glycine', P: 'proline', X: 'other', U: 'other', '-': 'gap' })) {
+        assert.equal(residueGroup(residue).key, group)
+    }
+})
 
 const ev = (db, score = null, publications = [], methods = [], type = 'direct') => ({ database: db, score, score_name: score == null ? null : 'score', publications, methods, type })
 const nodes = [
