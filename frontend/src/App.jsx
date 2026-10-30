@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import './App.css'
 import Navbar from './components/Navbar'
-import OrganismCoveragePlots from './components/OrganismCoveragePlots'
 import SearchSection from './components/SearchSection'
+import './collection/collection.css'
+const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
 import InputSummary from './components/InputSummary'
 import InteractionOverlapLog from './components/InteractionOverlapLog'
 import StringResults from './components/StringResults'
@@ -12,6 +13,9 @@ import CorumResults from './components/CorumResults'
 import IntactResults from './components/IntaActResults'
 import HuRiResults from './components/HuRiResults'
 import DownloadPanel from './components/DownloadPanel'
+import ExtendedDatabaseResults from './components/ExtendedDatabaseResults'
+
+const EXTENDED_DATABASES = ['ComplexPortal', 'Reactome', 'Signor', 'Hippie', 'HuMap', 'Mint']
 
 const DATABASE_HEADER_COLORS = {
     STRING: 'bg-sky-700',
@@ -20,6 +24,12 @@ const DATABASE_HEADER_COLORS = {
     Predictomes: 'bg-indigo-700',
     CORUM: 'bg-amber-700',
     HuRI: 'bg-rose-700',
+    ComplexPortal: 'bg-cyan-700',
+    Reactome: 'bg-lime-700',
+    Signor: 'bg-red-700',
+    Hippie: 'bg-teal-700',
+    HuMap: 'bg-violet-700',
+    Mint: 'bg-pink-700',
 }
 
 const getDBStatus = (dbData, key, interactorKey) => {
@@ -72,6 +82,8 @@ const NoResults = ({ dbName, reason }) => (
 
 function App() {
     const [results, setresults] = useState(null)
+    const [searchTab, setSearchTab] = useState('single')
+    const [collectionOpened, setCollectionOpened] = useState(false)
 
     const stringData = results?.[1]?.output?.find(db => db.String)
     const intactData = results?.[1]?.output?.find(db => db.IntAct)
@@ -79,6 +91,9 @@ function App() {
     const predictomesData = results?.[1]?.output?.find(db => db.Predictomes)
     const huriData = results?.[1]?.output?.find(db => db.HuRI)
     const biogridData = results?.[1]?.output?.find(db => db.BioGrid)
+    const extendedData = Object.fromEntries(
+        EXTENDED_DATABASES.map(dbKey => [dbKey, results?.[1]?.output?.find(item => item[dbKey])])
+    )
 
     const stringStatus = getDBStatus(stringData, 'String', 'Direct_Interactions')
     const intactStatus = getDBStatus(intactData, 'IntAct', 'Interactions')
@@ -88,14 +103,21 @@ function App() {
     const huriStatus = getDBStatus(huriData, 'HuRI', 'Interactors')
 
     return (
-        <div className="min-h-screen flex flex-col">
+        <div className="app-shell min-h-screen flex flex-col">
             <Navbar />
-            <main className="flex-1">
-                <OrganismCoveragePlots />
+            <main className="app-main flex-1">
+                <div className="search-tabs" role="tablist" aria-label="Search workflows">
+                    <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => setSearchTab('single')}>Single searches</button>
+                    <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => { setSearchTab('collection'); setCollectionOpened(true) }}>Collection search</button>
+                </div>
+                <div id="collection-search-panel" role="tabpanel" aria-labelledby="collection-search-tab" hidden={searchTab !== 'collection'}>
+                    <Suspense fallback={<p className="collection-shell">Loading collection search…</p>}>{collectionOpened && <CollectionSearch />}</Suspense>
+                </div>
+                <div id="single-search-panel" role="tabpanel" aria-labelledby="single-search-tab" hidden={searchTab !== 'single'}>
                 <SearchSection setresults={setresults} />
 
                 {results && (
-                    <div className="w-full max-w-[110rem] mx-auto px-4 py-10 sm:px-6">
+                    <div className="app-results w-full mx-auto">
                         <InteractionOverlapLog results={results} />
 
                         <InputSummary input={results[0].Input} />
@@ -130,12 +152,23 @@ function App() {
                         {huriData && (huriStatus === 'valid'
                             ? <HuRiResults data={huriData} />
                             : <NoResults dbName="HuRI" reason={huriStatus} />)}
+
+                        {EXTENDED_DATABASES.map(dbKey => {
+                            const databaseData = extendedData[dbKey]
+                            if (!databaseData) return null
+                            const status = getDBStatus(databaseData, dbKey, 'Interactors')
+                            const hasSourceError = Boolean(databaseData?.[dbKey]?.[0]?.info?.Error)
+                            return status === 'valid' || hasSourceError
+                                ? <ExtendedDatabaseResults key={dbKey} dbKey={dbKey} data={databaseData} />
+                                : <NoResults key={dbKey} dbName={dbKey} reason={status} />
+                        })}
                     </div>
                 )}
+                </div>
             </main>
 
-            <footer className="border-t border-slate-300 bg-slate-100 px-4 py-6 text-sm text-slate-700 sm:px-6">
-                <div className="mx-auto flex w-full max-w-[110rem] flex-col gap-2">
+            <footer className="app-footer border-t border-slate-300 px-4 py-6 text-sm text-slate-700 sm:px-6">
+                <div className="app-frame mx-auto flex w-full flex-col gap-2">
                     <p className="font-medium text-slate-900">Free access statement</p>
                     <p>
                         KlinkPPI is provided as a free-access resource. Lab information:{' '}

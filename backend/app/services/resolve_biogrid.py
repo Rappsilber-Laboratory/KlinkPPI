@@ -48,6 +48,7 @@ def resolve_biogrid(input_id: str, tax_id: str):
                 "Interaction_Detection_Method": interactor["Interaction_Detection_Method"],
                 "Interaction_Type": interactor["Interaction_Type"],
                 "Confidence_Score": interactor["Confidence_Score"],
+                "PubMed_Ids": interactor.get("PubMed_Ids", []),
                 "Interactor_Link": interactor["Interactor_Link"],
             }
         )
