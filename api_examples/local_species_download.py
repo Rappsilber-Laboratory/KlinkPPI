@@ -10,10 +10,12 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
-from app.services.species_ppi_api import SpeciesPPIDownloader
 
 
 def main() -> None:
+    # Keep backend dataset loading inside execution, never at module import.
+    from app.services.species_ppi_api import SpeciesPPIDownloader
+
     downloader = SpeciesPPIDownloader(show_progress=True)
 
     tax_id = "10090"

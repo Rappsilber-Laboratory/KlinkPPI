@@ -240,6 +240,29 @@ class KlinkPPIClient:
         """Validated accession, species, gene, sequence and FASTA; server caches successes."""
         return self._request("GET", self._job_path("collection", job_id) + "/sequence", params={"accession": accession})
 
+    def embedding_models(self):
+        """Return the supported embedding models and metric descriptions."""
+        return self._request("GET", "/collection/embedding-models")
+
+    def start_embedding(self, job_id, source, target, *, models=("esm2-8m",)):
+        return self._request("POST", self._job_path("collection", job_id) + "/embeddings",
+                             json={"source": source, "target": target, "models": list(models)})
+
+    def get_embedding(self, job_id, embedding_id):
+        path = self._job_path("collection", job_id) + "/embeddings/" + quote(str(embedding_id), safe="")
+        return self._request("GET", path)
+
+    def wait_embedding(self, job_id, task, *, poll_interval=1.0, max_wait=3600, on_progress=None):
+        path = self._job_path("collection", job_id) + "/embeddings/" + quote(str(task["embedding_id"]), safe="")
+        return self._wait(path, task, poll_interval, max_wait=max_wait, on_progress=on_progress)
+
+    def embed_pair(self, job_id, source, target, *, models=("esm2-8m",),
+                   poll_interval=1.0, max_wait=3600, on_progress=None):
+        """Compute selected models and wait for scores, explanations and runtimes."""
+        self._validate_wait(poll_interval, max_wait)
+        task = self.start_embedding(job_id, source, target, models=models)
+        return self.wait_embedding(job_id, task, poll_interval=poll_interval, max_wait=max_wait, on_progress=on_progress)
+
     def start_alignment(self, job_id, source, target):
         return self._request("POST", self._job_path("collection", job_id) + "/alignments",
                              json={"source": source, "target": target})

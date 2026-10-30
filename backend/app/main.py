@@ -28,7 +28,7 @@ from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
-from app.services import collection_search, collection_go, collection_alignment, collection_analysis
+from app.services import collection_search, collection_go, collection_alignment, collection_analysis, collection_embeddings
 
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -571,3 +571,37 @@ def pair_alignment_status(job_id: str, alignment_id: str):
         return collection_alignment.snapshot(alignment_id, job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Alignment not found or expired")
+
+
+class PairEmbeddingRequest(PairAlignmentRequest):
+    models: list[str] = Field(default_factory=lambda: ["esm2-8m"], min_length=1, max_length=12)
+
+
+@app.get("/collection/embedding-models")
+def collection_embedding_models():
+    """Supported models from embedding_FW/examples/test_two_seqs_mem.py and score meanings."""
+    return collection_embeddings.catalog()
+
+
+@app.post("/collection/jobs/{job_id}/embeddings", status_code=202)
+def start_pair_embedding(job_id: str, request: PairEmbeddingRequest):
+    """Queue distances for selected ESM-2, ESM-1b, ESM-1v or ESM-C models."""
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_embeddings.start(job, request.source, request.target, request.models)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/embeddings/{embedding_id}")
+def pair_embedding_status(job_id: str, embedding_id: str):
+    """Poll progress, runtime and completed scores with explanations."""
+    try:
+        return collection_embeddings.snapshot(embedding_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Embedding comparison not found or expired")

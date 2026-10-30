@@ -22,7 +22,7 @@ def client() -> KlinkPPIClient:
 
 def progress(job):
     """Called on each poll; production code can send this to a logger or UI."""
-    print(f"{job.get('job_id', job.get('alignment_id', 'job'))}: {job['status']} — {job.get('progress', '')}")
+    print(f"{job.get('job_id', job.get('alignment_id', job.get('embedding_id', 'job')))}: {job['status']} — {job.get('progress', '')}")
 
 
 def report_coverage(job):

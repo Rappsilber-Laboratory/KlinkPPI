@@ -3,6 +3,8 @@ import { unknownInputPairs } from '../collection/analysis'
 import CollectionProteinActions from './CollectionProteinActions'
 import PairAlignmentResult from './PairAlignmentResult'
 import PairAlignmentDetails from './PairAlignmentDetails'
+import { usePairEmbeddings } from '../collection/usePairEmbeddings'
+import { EmbeddingModelPicker, PairEmbeddingCell, PairEmbeddingDetails } from './PairEmbedding'
 
 const API = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
 const PAGE_SIZE = 20
@@ -17,6 +19,7 @@ function SharedTerms({ result, source, target }) {
 }
 
 export default function CollectionUnknownPairs({ job, graph }) {
+    const embeddings = usePairEmbeddings(job.job_id)
     const sequences = useRef(new Map())
     const getSequence = accession => {
         const key = `${job.job_id}:${accession}`
@@ -113,14 +116,14 @@ export default function CollectionUnknownPairs({ job, graph }) {
     return <section className="collection-card unknown-pairs" aria-label="Unknown interaction pairs">
         <span className="collection-eyebrow">INDUCED NETWORK · UNEXPLORED PAIRS</span>
         <h2>Pairs with no interaction found</h2>
-        <p>{pairs.length.toLocaleString()} pairs among your resolved input proteins have no interaction evidence in this search. Check GO for shared annotations or align their UniProt protein sequences.</p>
+        <p>{pairs.length.toLocaleString()} pairs among your resolved input proteins have no interaction evidence in this search. Check GO for shared annotations, align their UniProt protein sequences, or compare embeddings with selected models.</p>
         <p className="collection-note">This list uses the full search results before display filters. Missing evidence does not mean the proteins cannot interact. Shared GO terms describe common annotations and do not establish a protein interaction.</p>
         <p className="collection-note">Search BLASTP opens NCBI Protein BLAST with the FASTA and job title filled in; choose settings and start the search there. Copy FASTA fetches the same validated UniProt sequence. Find similar structures opens AlphaFold: choose “Similar structures” to search with Foldseek. If no model is available, Copy FASTA and paste it into the <a href="https://search.foldseek.com/" target="_blank" rel="noopener noreferrer">Foldseek server</a>.</p>
         {(graph.truncated || job.warnings?.length > 0) && <p className="collection-warning">Search coverage may be incomplete; review the coverage notes above before interpreting these pairs.</p>}
         {!pairs.length ? <p>{graph.nodes.filter(node => node.input && !node.unresolved).length < 2 ? 'At least two resolved input proteins are needed to compare pairs.' : 'Every resolved input pair has interaction evidence in this search.'}</p> : <>
             <label htmlFor="unknown-pair-search">Find a protein in these pairs</label>
             <input id="unknown-pair-search" type="search" placeholder="Gene symbol or UniProt accession" value={query} onChange={event => { setQuery(event.target.value); setPage(0) }} />
-            <div className="collection-table-wrap"><table><thead><tr><th>Protein A</th><th>Protein B</th><th>Shared annotations</th><th>Alignment</th></tr></thead><tbody>{filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(pair => {
+            <div className="collection-table-wrap"><table><thead><tr><th>Protein A</th><th>Protein B</th><th>Shared annotations</th><th>Alignment</th><th><EmbeddingModelPicker models={embeddings.models} selected={embeddings.selected} onChange={embeddings.setSelected} error={embeddings.catalogError} /></th></tr></thead><tbody>{filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(pair => {
                 const result = results[pair.key]
                 const loading = pending === pair.key
                 const alignment = alignments[pair.key]
@@ -129,14 +132,16 @@ export default function CollectionUnknownPairs({ job, graph }) {
                     <tr><td>{pair.source.gene}<small>{pair.source.id}</small><CollectionProteinActions protein={pair.source} species={job.species} getSequence={getSequence} /></td><td>{pair.target.gene}<small>{pair.target.id}</small><CollectionProteinActions protein={pair.target} species={job.species} getSequence={getSequence} /></td><td><button type="button" disabled={Boolean(pending)} aria-label={`${result?.data ? 'Toggle shared GO terms' : 'Check GO'} for ${pair.source.gene} and ${pair.target.gene}`} aria-expanded={Boolean(open[pair.key])} onClick={() => result?.data ? setOpen(current => ({ ...current, [pair.key]: !current[pair.key] })) : check(pair)}>{loading ? 'Checking GO…' : result?.data ? `${open[pair.key] ? 'Hide' : 'Show'} ${result.data.shared_terms.length} shared terms` : result?.error ? 'Retry GO' : 'Check GO'}</button></td><td className="pair-alignment-cell">
                         {alignment && <PairAlignmentResult alignment={alignment} isOpen={alignmentOpen[pair.key]} detailsId={detailsId} onToggle={() => setAlignmentOpen(current => ({ ...current, [pair.key]: !current[pair.key] }))} />}
                         {(!alignment || alignment.status === 'failed') && <button type="button" disabled={Boolean(activeAlignment)} aria-label={`Align sequences for ${pair.source.gene} and ${pair.target.gene}`} onClick={() => alignPair(pair)}>{alignment?.status === 'failed' ? 'Retry alignment' : 'Align seqs'}</button>}
-                    </td></tr>
-                    {alignmentOpen[pair.key] && alignment?.result && <tr className="pair-alignment-detail-row"><td colSpan={4}><PairAlignmentDetails id={detailsId} result={alignment.result} source={pair.source} target={pair.target} /></td></tr>}
-                    {open[pair.key] && <tr className="shared-go-row"><td colSpan={4}><div aria-live="polite" aria-busy={loading}>{loading ? <p role="status">Fetching GO annotations from UniProt…</p> : result?.error ? <p className="collection-error" role="alert">{result.error}</p> : result?.data ? <SharedTerms result={result.data} source={pair.source} target={pair.target} /> : null}</div></td></tr>}
+                    </td><td><PairEmbeddingCell pair={pair} state={embeddings} detailsId={`embedding-${detailsId}`} /></td></tr>
+                    {embeddings.open[pair.key] && embeddings.tasks[pair.key]?.result && <tr><td colSpan={5}><PairEmbeddingDetails id={`embedding-${detailsId}`} task={embeddings.tasks[pair.key]} source={pair.source} target={pair.target} /></td></tr>}
+                    {alignmentOpen[pair.key] && alignment?.result && <tr className="pair-alignment-detail-row"><td colSpan={5}><PairAlignmentDetails id={detailsId} result={alignment.result} source={pair.source} target={pair.target} /></td></tr>}
+                    {open[pair.key] && <tr className="shared-go-row"><td colSpan={5}><div aria-live="polite" aria-busy={loading}>{loading ? <p role="status">Fetching GO annotations from UniProt…</p> : result?.error ? <p className="collection-error" role="alert">{result.error}</p> : result?.data ? <SharedTerms result={result.data} source={pair.source} target={pair.target} /> : null}</div></td></tr>}
                 </Fragment>
             })}</tbody></table></div>
             {!filtered.length && <p>No pairs match this protein.</p>}
             <div className="collection-actions"><button type="button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous pairs</button><span>{filtered.length.toLocaleString()} pairs · Page {currentPage + 1} of {pages}</span><button type="button" disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>Next pairs</button></div>
         </>}
+        <p className="collection-note">Embedding: select one model in the column header, then compute distances for a pair. First use downloads model weights and may take several minutes. ESM-2/ESM-1b/ESM-1v accept up to 1,022 residues; ESM-C accepts up to 2,046. Full sequences are used without truncation. Results describe similarity and do not establish an interaction.</p>
         <p className="collection-note alignment-method">*Alignment: <a href="https://biopython.org/docs/1.88/Tutorial/chapter_pairwise.html" target="_blank" rel="noreferrer">Gotoh global alignment (Needleman–Wunsch with affine gaps)</a>, Biopython PairwiseAligner; BLOSUM62; gap opening penalty 10, extension penalty 0.5 per additional residue; terminal gaps penalized equally. Gap cost = 10 + (length − 1) × 0.5. Full UniProt protein-entry sequences are fetched on click and cached for up to one hour. U/O are scored as X; B/Z/X use BLOSUM62 scores. Identity counts identical residues over all alignment columns, including gaps. The raw alignment score measures sequence similarity and does not establish an interaction.</p>
     </section>
 }

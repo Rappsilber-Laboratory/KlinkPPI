@@ -22,3 +22,6 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.7.0
 uvicorn==0.49.0
+
+# Install the bundled framework and both model backends (Python 3.12+).
+./embedding_FW[hf,esmc]

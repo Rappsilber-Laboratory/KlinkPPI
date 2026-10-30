@@ -1,7 +1,6 @@
 """Offline HTTP-contract checks: actual ASGI routing, no external service calls."""
 import asyncio
-from contextlib import ExitStack
-from copy import deepcopy
+from contextlib import ExitStack, redirect_stdout
 import importlib
 import io
 import json
@@ -26,7 +25,6 @@ from app.services.collection_analysis import analyze
 class ASGISession:
     """Translate requests into real FastAPI ASGI calls without an extra test dependency."""
     def request(self, method, url, **kwargs):
-        print("Contract request:", method, url, flush=True)
         prepared = requests.Request(method, url, params=kwargs.get("params"), json=kwargs.get("json")).prepare()
         url = urlsplit(prepared.url)
         body = prepared.body or b""
@@ -47,7 +45,13 @@ class ASGISession:
                 await asyncio.Event().wait()
             async def send(message):
                 messages.append(message)
-            await asyncio.wait_for(main.app(scope, receive, send), timeout=10)
+            # Fixture handlers are synchronous and deterministic. Run them inline
+            # so these routing/serialization tests do not depend on worker timing.
+            # Production concurrency is not exercised by this contract adapter.
+            async def inline_run_sync(func, *args, **kwargs):
+                return func(*args)
+            with patch("anyio.to_thread.run_sync", new=inline_run_sync):
+                await asyncio.wait_for(main.app(scope, receive, send), timeout=10)
         asyncio.run(invoke())
         response = requests.Response()
         response.status_code = next(m["status"] for m in messages if m["type"] == "http.response.start")
@@ -59,6 +63,8 @@ class ASGISession:
 def fixture_job():
     nodes = [{"id": key, "gene": key, "input": True, "species": "Homo sapiens", "tax_id": "9606"}
              for key in ("P04637", "P38398", "Q00987", "P00533")]
+    nodes += [{"id": "P01009", "gene": "A1AT", "input": False},
+              {"id": "unknown:0", "gene": "missing", "input": True, "unresolved": True}]
     def edge(index, a, b, dbs):
         return {"id": f"e{index}", "source": nodes[a]["id"], "target": nodes[b]["id"],
                 "evidence": [{"database": db, "type": "direct", "methods": ["two hybrid"],
@@ -68,7 +74,7 @@ def fixture_job():
             "tokens": [n["id"] for n in nodes], "database_statuses": {}, "selections": {},
             "resolution": [{"input": n["id"], "status": "resolved", "candidates": [n]} for n in nodes],
             "graph": {"nodes": nodes, "edges": [edge(0, 0, 1, ["IntAct", "BioGrid"]),
-                       edge(1, 0, 2, ["IntAct"]), edge(2, 1, 2, ["BioGrid"])]}}
+                       edge(1, 0, 2, ["IntAct"]), edge(2, 1, 2, ["BioGrid"]), edge(3, 0, 4, ["IntAct"])]}}
 
 
 class ClientContractTests(unittest.TestCase):
@@ -79,7 +85,8 @@ class ClientContractTests(unittest.TestCase):
     def test_analysis_matches_web_statistics_and_filtering(self):
         # Feed exactly the same fixtures to the existing JS implementation.
         for filters in ({}, {"databases": ["IntAct"], "method": "two", "min_publications": 1},
-                        {"score_database": "IntAct", "min_score": .9}, {"databases": []}):
+                        {"score_database": "IntAct", "min_score": .9}, {"databases": []},
+                        {"evidence_type": "predicted"}, {"min_publications": 2}, {"method": "missing"}):
             result = analyze(self.job, **filters)
             js_filters = result["analysis"]["filters"]
             script = '''import {filterGraph, computeStatistics} from './frontend/src/collection/analysis.js';
@@ -99,7 +106,17 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
                         n["databases"].sort()
             self.assertEqual(web["nodes"], result["nodes"])
             self.assertEqual(web["edges"], result["edges"])
-            self.assertEqual(web["statistics"], result["statistics"])
+            def numeric_precision(value):
+                # JS sums binary floats; Python's statistics.mean uses a more
+                # precise accumulator. Compare numerical results to 12 decimals.
+                if isinstance(value, float):
+                    return round(value, 12)
+                if isinstance(value, list):
+                    return [numeric_precision(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: numeric_precision(item) for key, item in value.items()}
+                return value
+            self.assertEqual(numeric_precision(web["statistics"]), numeric_precision(result["statistics"]))
         self.assertNotIn("databases", self.job["graph"]["edges"][0])  # No mutation.
 
     def test_real_routes_accept_all_client_workflows(self):
@@ -107,14 +124,14 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
         review = {**self.job, "status": "awaiting_selection"}
         task = {"alignment_id": "alignment", "status": "completed", "result": {"score": 1}}
         protein = {"accession": "P04637", "gene": "TP53", "sequence": "ACDE", "fasta": ">P04637 TP53\nACDE\n"}
-        result = [{"Input": {"UniProtId": "P04637", "TaxonomyId": "9606"}}, {"output": [{"IntAct": [{"info": {}}, {"Interactors": []}]}]}]
+        result = [{"Input": {"UniProtId": "P04637", "TaxonomyId": "9606"}}, {"output": [{"IntAct": [{"info": {}}, {"Interactions": []}]}]}]
         with ExitStack() as stack:
             patches = [
                 (main, "resolve_species_context", ("9606", "", {"display_name": "Homo sapiens"})),
-                (main, "get_supported_databases", ["IntAct", "BioGrid"]),
+                (main, "get_supported_databases", ["String", "IntAct", "BioGrid"]),
                 (main, "search_species", [{"display_name": "Homo sapiens", "tax_id": "9606"}]),
                 (main, "get_supported_organism_summary", {"fixture": True}),
-                (main, "search_gene_name_candidates", [{"primary_accession": "P04637"}]),
+                (main, "search_gene_name_candidates", [{"primary_accession": "P04637", "gene_names": ["TP53"], "protein_name": "Cellular tumor antigen p53", "reviewed": True}]),
                 (main, "create_species_ppi_job", species), (main, "get_species_ppi_job", species),
                 (main, "cancel_species_ppi_job", {**species, "status": "cancelled"}),
                 (main.collection_search, "create_job", review), (main.collection_search, "snapshot", self.job),
@@ -132,6 +149,14 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
             ]
             for owner, name, value in patches:
                 stack.enter_context(patch.object(owner, name, return_value=value))
+            def resolve_fixture(database, *args):
+                if database == "String":
+                    return [{"info": {}}, {"Direct_Interactions": []}, {"Indirect_Interactions": []}]
+                key = "Interactions" if database == "IntAct" else "Interactors"
+                return [{"info": {}}, {key: []}]
+            main.resolve_database_safely.side_effect = resolve_fixture
+            main.build_species_mitab.side_effect = lambda *args: io.StringIO("header\n")
+            main.build_species_parquet.side_effect = lambda *args: io.BytesIO(b"PAR1fixture")
             self.assertEqual(self.api.health(), {"status": "ok"})
             self.assertTrue(self.api.supported_organisms()["fixture"])
             self.assertEqual(self.api.search_species("human")[0]["tax_id"], "9606")
@@ -150,7 +175,7 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
             self.assertEqual(self.api.shared_go("fixture", "P04637", "P00533"), {"shared_terms": []})
             self.assertEqual(self.api.align_pair("fixture", "P04637", "P00533"), task)
             self.assertEqual(self.api.get_alignment("fixture", "alignment"), task)
-            self.assertEqual(self.api.collection_analysis("fixture")["statistics"]["edges"], 3)
+            self.assertEqual(self.api.collection_analysis("fixture")["statistics"]["edges"], 4)
             self.assertEqual(self.api.collection_analysis("fixture", databases=[])["edges"], [])
             with self.assertRaises(KlinkPPIError) as caught:
                 self.api.collection_analysis("fixture", min_publications=-1)
@@ -161,6 +186,24 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
                         path = Path(directory) / f"{kind}.{format_name}"
                         getattr(self.api, f"download_{kind}")(value, path, format_name)
                         self.assertGreater(path.stat().st_size, 0)
+
+            # Run the actual documented examples against these same ASGI routes.
+            # This checks their orchestration, field names and file paths together.
+            with tempfile.TemporaryDirectory() as directory:
+                folder = Path(directory)
+                for module_name, argv in (
+                    ("species_lookup", None), ("gene_lookup", ["--accession", "P04637"]),
+                    ("single_search", None), ("complete_species_search", []),
+                    ("collection_search", ["--databases", "IntAct", "BioGrid"]),
+                    ("collection_followups", ["--result", str(folder / "collection_search.json"), "--pair-index", "0"]),
+                ):
+                    module = importlib.import_module(f"api_examples.{module_name}")
+                    with patch.object(module, "OUTPUT_DIR", folder), patch.object(module, "client", return_value=self.api), redirect_stdout(io.StringIO()):
+                        module.main() if argv is None else module.main(argv)
+                self.assertTrue((folder / "collection_network.graphml").exists())
+                self.assertTrue((folder / "shared_go.json").exists())
+                self.assertTrue((folder / "pair_alignment.json").exists())
+                self.assertTrue(list(folder.glob("*_searches.html")))
 
     def test_file_limit_duplicates_exports_and_launchers(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -217,9 +260,17 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
             self.assertEqual(list(Path(directory).glob("*.part")), [])
             response.close.assert_called_once()
 
+    def test_main_dispatcher_forwards_workflow_help_without_running_other_workflows(self):
+        entry = importlib.import_module("python_api_example")
+        example = Mock()
+        with patch.object(entry, "import_module", return_value=example) as load:
+            entry.main(["collection", "--help"])
+            load.assert_called_once_with("api_examples.collection_search")
+            example.main.assert_called_once_with(["--help"])
+
     def test_examples_import_without_requests_or_output_creation(self):
-        with patch.object(requests.Session, 'request', side_effect=AssertionError("Unexpected request")):
+        with patch.object(requests.Session, 'request', side_effect=AssertionError("Unexpected request")), patch.object(Path, 'mkdir', side_effect=AssertionError("Unexpected output directory")):
             for name in ("python_api_example", "api_example", "api_examples.species_lookup", "api_examples.single_search",
                          "api_examples.gene_lookup", "api_examples.collection_search", "api_examples.collection_followups",
-                         "api_examples.complete_species_search"):
+                         "api_examples.complete_species_search", "api_examples.local_species_download"):
                 importlib.import_module(name)

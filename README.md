@@ -34,7 +34,7 @@ KlinkPPI is a web application for exploring protein-protein interaction (PPI) da
 
 ## Prerequisites
 
-- `Python 3.11+` recommended
+- `Python 3.12+` required for all embedding models
 - `Node.js 20.19+` or `22.12+`
 - `npm`
 
@@ -64,6 +64,15 @@ Clone the repository and work from the project root:
 git clone <your-repo-url>
 cd KlinkPPI
 ```
+
+Clone the PLM framework separately into the KlinkPPI project root before installing
+dependencies (skip this command if `embedding_FW/` is already present):
+
+```bash
+git clone https://github.com/lutfia95/embedding_FW.git embedding_FW
+```
+
+The folder must be named `embedding_FW` and sit beside `backend/` and `frontend/`.
 
 Install the backend and frontend dependencies from the project root:
 
@@ -366,3 +375,85 @@ filters/statistics, FASTA/BLAST/Foldseek, GO/alignment, and all data export form
 `GET /collection/jobs/{job_id}/analysis` exposes the web network filters and
 statistics for completed collections. Browser-rendered SVG/PNG and analysis PDF
 remain available through the web app.
+
+## Embedding comparisons for unknown collection pairs
+
+In an induced collection search, the unknown-pairs table includes an **Embedding**
+column beside Alignment. Click the model selector in its header to open a compact
+popup, select exactly one model, and click **Done**. The selector shows the selected
+model name. Then click **Compute distances** for a pair. Expand the resulting scores
+to see each value and its explanation. Click **Download PLM scores (TSV)** in the
+expanded panel to save all computed scores with the columns `metric` and `value`.
+The filename uses the pair names, for example `TP53_BRCA1_plm_scores.tsv`. Results retain the models used even if the selection changes;
+click again to compute the new selection. Progress, total runtime and per-model runtime
+are shown. Runtime includes sequence retrieval, model loading/downloads and scoring,
+but excludes time waiting for the worker.
+
+All 12 models in `embedding_FW/examples/test_two_seqs_mem.py` are supported by both
+the KlinkPPI interface and API:
+
+- ESM-2: `esm2-8m`, `esm2-35m`, `esm2-150m`, `esm2-650m`.
+- ESM-1b: `esm1b-650m`.
+- ESM-1v: `esm1v-650m-1`, `esm1v-650m-2`, `esm1v-650m-3`, `esm1v-650m-4`, `esm1v-650m-5`.
+- ESM-C: `esmc-300m`, `esmc-600m`.
+
+KlinkPPI deliberately exposes this example's model set; other models in the framework
+registry are not enabled in this integration. KlinkPPI uses the framework’s public embedding API and metrics to match
+the two-sequence example. It returns five sequence baselines and fourteen embedding scores per selected model
+(mean/max pooling with five vector metrics each, plus four residue metrics).
+Mean, max and residue embeddings use L2 normalization. The API returns a sentence
+explaining every score. These similarities are not interaction probabilities or
+experimental interaction evidence; values from different models need not be calibrated.
+
+Clone [embedding_FW](https://github.com/lutfia95/embedding_FW.git) separately into
+`embedding_FW/` in the project root using the installation command above. Use Python **3.12+**, required by the bundled
+ESM-C backend. `npm install`, `npm run setup`, and the root `npm run build` install the
+local framework package and both Hugging Face and Biohub ESM-C dependencies through
+`requirements.txt`. Root `npm run build` also builds the frontend. A frontend-only
+build (`npm --prefix frontend run build`) assumes backend setup has already run.
+To choose Python explicitly, run `PYTHON=python3.12 npm run setup`. An existing older
+`.venv` must be recreated with Python 3.12+ first. The model dependencies include
+PyTorch and can require substantial disk space. Model weights download on first use
+and use the upstream Hugging Face cache; set `HF_HOME` to choose a writable persistent
+cache directory. Weight downloads require internet access. CPU or CUDA is selected
+automatically; available memory and checkpoint access still determine whether a model
+can run on a given machine.
+
+Only full validated UniProt sequences for unknown resolved input pairs in completed
+induced collections are accepted. ESM-2/ESM-1b/ESM-1v allow at most 1,022 residues per
+sequence; ESM-C allows 2,046. Longer inputs fail explicitly without truncation. One
+embedding task runs at a time per backend process, and selected models run sequentially.
+Tasks are kept in memory for up to an hour, with a maximum of 32 retained tasks per
+process; use one backend worker or sticky routing, as for other collection jobs.
+Model failures return an error without publishing partial scores.
+
+API endpoints (also described in `/docs`):
+
+- `GET /collection/embedding-models`: supported IDs and metric explanations.
+- `POST /collection/jobs/{job_id}/embeddings`: JSON `source`, `target`, `models`
+  (nonempty list; defaults to `["esm2-8m"]`); returns HTTP 202 and an `embedding_id`.
+- `GET /collection/jobs/{job_id}/embeddings/{embedding_id}`: status, progress,
+  completed/total steps, runtime, error, and completed `result`. The result contains
+  `scores`, `descriptions`, `model_runtime_seconds`, and sequence lengths.
+
+For example, using the public Python client and an existing completed collection:
+
+```python
+from klinkppi import KlinkPPIClient
+
+client = KlinkPPIClient("http://127.0.0.1:8000")
+print(client.embedding_models())
+task = client.embed_pair(
+    job_id, source_accession, target_accession,
+    models=["esm2-8m", "esmc-300m"],
+    on_progress=lambda progress: print(progress["progress"]),
+)
+print(task["runtime_seconds"])
+for score, value in task["result"]["scores"].items():
+    print(score, value, task["result"]["descriptions"][score])
+```
+
+`start_embedding` and `get_embedding` support asynchronous API clients. Invalid models
+or ineligible pairs return HTTP 400; missing/expired jobs or tasks return 404; task
+capacity returns 429. Model and sequence-fetch failures appear as `status: "failed"`
+with an explanatory `error` in the polled task.

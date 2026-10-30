@@ -4,6 +4,7 @@
   "scripts": {
     "postinstall": "node scripts/setup.mjs",
     "setup": "node scripts/setup.mjs",
+    "build": "node scripts/setup.mjs && npm --prefix frontend run build",
     "dev": "node scripts/dev.mjs",
     "start": "npm run dev"
   }

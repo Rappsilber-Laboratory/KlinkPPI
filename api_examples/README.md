@@ -59,6 +59,7 @@ an adjacent temporary file and replace the destination only after success.
 | Exact shared GO terms | `collection_followups.py` | `shared_go`; `GET /collection/jobs/{job_id}/shared-go?source=…&target=…` |
 | Validated sequence and FASTA | `collection_followups.py` | `protein_sequence`; `GET /collection/jobs/{job_id}/sequence?accession=…` |
 | Pair alignment, stage progress and retry | `collection_followups.py` | `start_alignment`, `get_alignment`, `wait_alignment`, `align_pair`; `POST /collection/jobs/{job_id}/alignments`, `GET /collection/jobs/{job_id}/alignments/{alignment_id}` |
+| Embedding scores, explanations, runtime and TSV | `collection_embeddings.py` | `embedding_models`, `start_embedding`, `wait_embedding`, `get_embedding`; `GET /collection/embedding-models`, `POST /collection/jobs/{job_id}/embeddings`, `GET /collection/jobs/{job_id}/embeddings/{embedding_id}` |
 | Protein BLAST, AlphaFold and Foldseek links | `collection_followups.py` | `write_protein_search_page` (local HTML launcher, no automatic searches) |
 
 The web app renders network layout, appearance controls, interactive plots,
@@ -244,7 +245,69 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=backend .venv/bin/python -m unittest discov
 npm --prefix frontend test
 ```
 
-The API/client tests exercise real ASGI routing with upstream fixtures, stream
-failure recovery, mapping review, validation, graph export and frontend statistics
+The API/client tests exercise real ASGI routing with synchronous upstream fixture
+handlers run inline (production concurrency is not exercised), stream failure recovery, mapping review, validation, graph export and frontend statistics
 parity. Live upstream services and complete production datasets are not exercised
 by those offline checks.
+
+## Embedding scores for unknown collection pairs
+
+Run the standalone example using a completed induced collection created by
+`collection_search.py`. List the unknown pairs first, then select one:
+
+```bash
+.venv/bin/python python_api_example.py embedding --list-models
+.venv/bin/python python_api_example.py embedding
+.venv/bin/python python_api_example.py embedding --pair-index 0 --models esm2-8m
+# Multiple models are allowed in one API request:
+.venv/bin/python python_api_example.py embedding --pair-index 0 --models esm2-8m esm2-35m esmc-300m
+```
+
+You can also run `.venv/bin/python api_examples/collection_embeddings.py --help`
+or `.venv/bin/python -m api_examples.collection_embeddings --help`.
+The default collection file is `api_example_outputs/collection_search.json`;
+use `--result path/to/collection_search.json` or `--job-id YOUR_JOB_ID` to choose
+another live collection. `KLINKPPI_OUTPUT_DIR` sets the output directory and the
+default collection-file directory, as for the other examples.
+
+**The API accepts one or multiple distinct supported models in `models`.**
+The web UI allows one model at a time. Multiple API models run sequentially on the
+server, and their scores are returned together. Large models or first-time downloads
+may need a longer polling deadline; pass `--max-wait 7200` for two hours.
+
+The example saves `{PAIR}_plm_scores.tsv` with exactly `metric` and `value` columns
+and full-precision values, matching the web download. `{PAIR}_plm_scores.json`
+contains the task, scores, explanations, total runtime, and per-model runtime.
+The initial task is saved immediately; a polling failure also preserves the last
+known task in JSON. No TSV is written for a failed computation. Without
+`--pair-index`, the example only lists pairs and does not load any model.
+
+The API supports all 12 models listed in
+`embedding_FW/examples/test_two_seqs_mem.py`: `esm2-8m`, `esm2-35m`,
+`esm2-150m`, `esm2-650m`, `esm1b-650m`, `esm1v-650m-1` through
+`esm1v-650m-5`, `esmc-300m`, and `esmc-600m`. Other framework registry
+models are not exposed by KlinkPPI. Run setup with Python 3.12+ to install
+the bundled framework and both model backends.
+
+Call `client.embedding_models()` for supported model IDs and metric descriptions.
+For an unknown pair in a completed induced collection, call:
+
+```python
+task = client.embed_pair(
+    job_id, source_accession, target_accession,
+    models=["esm2-8m", "esmc-300m"],
+)
+print(task["runtime_seconds"])
+print(task["result"]["scores"])
+print(task["result"]["descriptions"])
+print(task["result"]["model_runtime_seconds"])
+```
+
+For polling, use `start_embedding(...)` and `get_embedding(job_id, embedding_id)`.
+HTTP routes are `GET /collection/embedding-models`,
+`POST /collection/jobs/{job_id}/embeddings` (source, target, models), and
+`GET /collection/jobs/{job_id}/embeddings/{embedding_id}`. Jobs return progress,
+runtime and either explained scores or an error; partial scores are not returned.
+Weights download on first use. Scores indicate similarity, not interaction
+probability. Full sequences are required: ESM-2/1b/1v support up to 1,022 residues;
+ESM-C up to 2,046. See the root README for setup, metrics and runtime semantics.

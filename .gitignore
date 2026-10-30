@@ -40,3 +40,10 @@ frontend/dist/
 !backend/tests/test_api_client.py
 api_example_outputs/
 api_downloads/
+
+# Bundled framework source, examples, tests and dependency manifest
+!embedding_FW/requirements.txt
+!embedding_FW/examples/*.py
+!embedding_FW/examples/*.json
+!embedding_FW/tests/*.py
+!backend/tests/test_collection_embeddings.py
