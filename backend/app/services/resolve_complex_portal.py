@@ -4,6 +4,7 @@ import csv
 from itertools import combinations
 from pathlib import Path
 import re
+import threading
 from typing import Iterator
 
 import requests
@@ -14,15 +15,27 @@ CACHE_DIR = PROJECT_ROOT / "Data" / "SpeciesPPICache" / "ComplexPortal" / "curre
 DOWNLOAD_URL = "https://ftp.ebi.ac.uk/pub/databases/intact/complex/current/complextab/{tax_id}.tsv"
 PREDICTED_DOWNLOAD_URL = "https://ftp.ebi.ac.uk/pub/databases/intact/complex/current/complextab/{tax_id}_predicted.tsv"
 UNIPROT_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9-]{4,14}$")
+_DOWNLOAD_LOCKS: dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
 
 
 def ensure_complex_portal_file(tax_id: str, predicted: bool = False) -> Path:
     filename = f"{tax_id}_predicted.tsv" if predicted else f"{tax_id}.tsv"
-    source_url = PREDICTED_DOWNLOAD_URL if predicted else DOWNLOAD_URL
     destination = CACHE_DIR / filename
     if destination.exists() and destination.stat().st_size > 0:
         return destination
+    # Parallel first-use lookups (e.g. a collection) must share one download
+    # instead of racing on the same temporary file.
+    with _LOCKS_GUARD:
+        lock = _DOWNLOAD_LOCKS.setdefault(filename, threading.Lock())
+    with lock:
+        if destination.exists() and destination.stat().st_size > 0:
+            return destination
+        return _download_complex_portal_file(tax_id, predicted, filename, destination)
 
+
+def _download_complex_portal_file(tax_id: str, predicted: bool, filename: str, destination: Path) -> Path:
+    source_url = PREDICTED_DOWNLOAD_URL if predicted else DOWNLOAD_URL
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tsv.part")
     try:

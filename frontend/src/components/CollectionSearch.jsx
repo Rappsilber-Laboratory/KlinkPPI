@@ -1,19 +1,44 @@
 import { useEffect, useRef, useState } from 'react'
-import { DATABASES, LABELS, parseIdentifiers } from '../collection/analysis'
+import { DATABASES, LABELS, MAX_IDENTIFIERS, parseIdentifiers } from '../collection/analysis'
 import CollectionResults from './CollectionResults'
 import CollectionResultsBoundary from './CollectionResultsBoundary'
 import '../collection/collection.css'
+import { API, resultUrl, useLimits } from '../lib/routing'
+import Link from './Link'
 
-const API = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
 const EXAMPLE_IDENTIFIERS = ['P04217', 'P00751', 'P56211', 'P53539', 'P00790', 'Q02241', 'P30556', 'P04181', 'P11241', 'Q9Y265']
+const EXAMPLE_FILE = `${import.meta.env.BASE_URL}examples/collection_example.txt`
 async function request(path, options = {}) {
     const response = await fetch(`${API}${path}`, options)
-    const data = await response.json()
-    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Request failed. Check your inputs and try again.')
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+        const error = new Error(typeof data.detail === 'string' ? data.detail : 'Request failed. Check your inputs and try again.')
+        error.status = response.status
+        throw error
+    }
     return data
 }
 
-export default function CollectionSearch() {
+function ResultLink({ job, retentionDays }) {
+    const [copied, setCopied] = useState(false)
+    const url = resultUrl(job.job_id)
+    const copy = async () => {
+        try { await navigator.clipboard.writeText(url); setCopied(true); window.setTimeout(() => setCopied(false), 2000) }
+        catch { setCopied(false) }
+    }
+    const expires = job.expires_at ? new Date(job.expires_at * 1000).toLocaleDateString() : null
+    return <div className="result-link" role="note">
+        <strong>{job.pinned ? 'Example result (read-only, always available)' : 'Bookmark your result'}</strong>
+        <p>{job.pinned
+            ? 'This permanent example lets you explore every result view. Load the example into the form to run your own copy.'
+            : `Your analysis keeps running on the server if you close this page. Return any time with this private link${expires ? ` until ${expires}` : ` for ${retentionDays} days`}; only people you share it with can open it.`}</p>
+        <div className="result-link-row"><input readOnly value={url} aria-label="Result link" onFocus={event => event.target.select()} /><button type="button" onClick={copy}>{copied ? 'Copied' : 'Copy link'}</button></div>
+    </div>
+}
+
+export default function CollectionSearch({ initialJobId = null, onJobChange = () => {} }) {
+    const limits = useLimits()
+    const [loadError, setLoadError] = useState('')
     const [speciesQuery, setSpeciesQuery] = useState('')
     const [species, setSpecies] = useState(null)
     const [suggestions, setSuggestions] = useState([])
@@ -59,10 +84,34 @@ export default function CollectionSearch() {
         return () => { clearTimeout(timer); controller.abort() }
     }, [job, pollRetry])
 
-    // A page unmount cancels the server job; changing tabs keeps this component mounted.
-    useEffect(() => () => {
-        if (jobRef.current) fetch(`${API}/collection/jobs/${jobRef.current}/cancel`, { method: 'POST', keepalive: true }).catch(() => {})
-    }, [])
+    // Jobs are persisted on the server and keep running when the page closes;
+    // a bookmarked /results/<id> link reopens them with the submitted settings.
+    useEffect(() => {
+        if (!initialJobId || jobRef.current === initialJobId) return
+        const controller = new AbortController()
+        setLoadError('')
+        request(`/collection/jobs/${encodeURIComponent(initialJobId)}`, { signal: controller.signal })
+            .then(data => {
+                jobRef.current = data.job_id
+                setJob(data)
+                setSpecies({ display_name: data.species, tax_id: data.tax_id })
+                setSpeciesQuery(data.species)
+                setSuggestions([])
+                setIdentifiers((data.tokens || []).join('\n'))
+                setInputType(data.input_type || 'auto')
+                setDatabases(data.databases || [])
+                setMode(data.mode || 'induced')
+                setChoices({})
+                setPollRetry(0)
+            })
+            .catch(err => {
+                if (err.name === 'AbortError') return
+                setLoadError(err.status === 404
+                    ? `This result does not exist or has expired. Results are kept for ${limits.result_retention_days} days after submission.`
+                    : `The result could not be loaded: ${err.message}`)
+            })
+        return () => controller.abort()
+    }, [initialJobId, limits.result_retention_days])
 
     const selectSpecies = value => {
         setSpecies(value)
@@ -112,6 +161,8 @@ export default function CollectionSearch() {
             }) })
             jobRef.current = data.job_id
             setJob(data)
+            setLoadError('')
+            onJobChange(data.job_id)
             setDuplicates(parsed.duplicates)
             setChoices({})
             setPollRetry(0)
@@ -138,7 +189,7 @@ export default function CollectionSearch() {
         finally { setPending(false) }
     }
     const cancel = async () => {
-        try { setJob(await request(`/collection/jobs/${job.job_id}/cancel`, { method: 'POST' })); jobRef.current = null }
+        try { setJob(await request(`/collection/jobs/${job.job_id}/cancel`, { method: 'POST' })) }
         catch (err) { setError(err.message) }
     }
     const undecided = job?.resolution?.some(row => row.candidates.length > 1 && !(row.input in choices))
@@ -156,18 +207,20 @@ export default function CollectionSearch() {
                     </div>
                     <div><label htmlFor="collection-input-type">Identifier type</label><select id="collection-input-type" value={inputType} onChange={e => setInputType(e.target.value)}><option value="auto">Detect each ID (mixed list)</option><option value="UniProtKB">UniProt accession / entry name</option><option value="Gene_Name">Gene symbols</option><option value="Ensembl">Ensembl</option><option value="GeneID">NCBI GeneID</option></select><p className="collection-note">Use an explicit type when a gene symbol resembles another ID.</p></div>
                 </div>
-                <div className="collection-job-heading"><label htmlFor="collection-identifiers">Gene / protein list (up to 20 entries)</label><button type="button" onClick={loadExample} disabled={busy}>Load example</button></div>
+                <div className="collection-job-heading"><label htmlFor="collection-identifiers">Gene / protein list (up to {MAX_IDENTIFIERS} entries)</label><div className="collection-job-buttons"><button type="button" onClick={loadExample} disabled={busy}>Load example</button><Link className="collection-link-button" to={`/results/${limits.example_job_id}`}>View example result</Link></div></div>
                 <textarea id="collection-identifiers" rows={6} placeholder={'TP53\nBRCA1\nP04637'} value={identifiers} onChange={e => setIdentifiers(e.target.value)} required />
-                <div className="collection-upload"><label htmlFor="collection-file">Or upload CSV, TSV or TXT</label><input id="collection-file" type="file" accept=".csv,.tsv,.txt,text/plain,text/csv,text/tab-separated-values" onChange={upload} /><p className="collection-note">One ID per line. No header or extra columns. Up to 20 distinct IDs; duplicates are merged.</p></div>
+                <div className="collection-upload"><label htmlFor="collection-file">Or upload CSV, TSV or TXT</label><input id="collection-file" type="file" accept=".csv,.tsv,.txt,text/plain,text/csv,text/tab-separated-values" onChange={upload} /><p className="collection-note">One ID per line. No header or extra columns. Up to {MAX_IDENTIFIERS} distinct IDs; duplicates are merged. <a href={EXAMPLE_FILE} download="collection_example.txt">Download the example file</a> to check the format. <Link to="/help#input-formats">Input format help</Link></p></div>
                 <div className="collection-grid">
                     <fieldset className="mode-options"><legend>Network mode</legend>{[['induced', 'Induced network', 'Interactions among your resolved input proteins.'], ['expanded', 'Expanded network', 'Your inputs plus first-neighbor interactors. Neighbor edges appear gray.']].map(([value, title, detail]) => <label key={value} className={mode === value ? 'selected-mode' : ''}><input type="radio" name="collection-mode" value={value} checked={mode === value} onChange={() => setMode(value)} /><span><strong>{title}</strong><small>{detail}</small></span></label>)}</fieldset>
                     <fieldset className="database-options"><legend>Source databases</legend><div>{DATABASES.map(db => <label key={db} title={available.includes(db) ? '' : 'Unavailable for this species'}><input type="checkbox" checked={databases.includes(db)} disabled={!available.includes(db)} onChange={e => setDatabases(current => e.target.checked ? [...current, db] : current.filter(value => value !== db))} />{LABELS[db] || db}</label>)}</div></fieldset>
                 </div>
             </fieldset>
-            <div className="collection-actions"><button className="collection-primary" disabled={busy} type="submit">{busy ? 'Working…' : 'Resolve collection IDs'}</button>{['resolving', 'running', 'awaiting_selection'].includes(job?.status) && <button type="button" onClick={cancel}>Cancel job</button>}<span className="collection-note">No interactions are queried until you review the mappings.</span></div>
+            <div className="collection-actions"><button className="collection-primary" disabled={busy} type="submit">{busy ? 'Working…' : 'Resolve collection IDs'}</button>{!job?.pinned && ['resolving', 'running', 'awaiting_selection'].includes(job?.status) && <button type="button" onClick={cancel}>Cancel job</button>}<span className="collection-note">No interactions are queried until you review the mappings.</span></div>
             {error && <p className="collection-error" role="alert">{error}</p>}
         </form>
-        {job && <div className="collection-card" aria-live="polite"><div className="collection-job-heading"><h3>{job.species} · {job.mode} network</h3><div className="collection-job-buttons"><span className="collection-status">{job.status.replaceAll('_', ' ')}</span>{job.status === 'completed' && <button type="button" onClick={rerun} disabled={busy} title="Repeat this search with the same IDs, mappings, species, databases and network mode">Rerun</button>}</div></div><p>{job.progress}</p>{job.database_statuses && <div className="database-progress">{Object.entries(job.database_statuses).map(([db, state]) => <span key={db} className={state.status}><i />{LABELS[db] || db}{state.total > 0 && <small>{state.completed}/{state.total}</small>}</span>)}</div>}{duplicates > 0 && <p className="collection-note">{duplicates} duplicate input rows merged.</p>}</div>}
+        {loadError && <div className="collection-card collection-warning" role="alert"><p>{loadError}</p><p><Link to="/">Start a new search</Link> · <Link to={`/results/${limits.example_job_id}`}>Open the example result</Link></p></div>}
+        {job && <ResultLink job={job} retentionDays={limits.result_retention_days} />}
+        {job && <div className="collection-card" aria-live="polite"><div className="collection-job-heading"><h3>{job.species} · {job.mode} network</h3><div className="collection-job-buttons"><span className="collection-status">{job.status.replaceAll('_', ' ')}</span>{job.status === 'completed' && !job.pinned && <button type="button" onClick={rerun} disabled={busy} title="Repeat this search with the same IDs, mappings, species, databases and network mode">Rerun</button>}</div></div><p>{job.progress}</p>{job.database_statuses && <div className="database-progress">{Object.entries(job.database_statuses).map(([db, state]) => <span key={db} className={state.status}><i />{LABELS[db] || db}{state.total > 0 && <small>{state.completed}/{state.total}</small>}</span>)}</div>}{duplicates > 0 && <p className="collection-note">{duplicates} duplicate input rows merged.</p>}{job.status === 'completed' && <p className="collection-note"><Link to="/help#collection-results">How to interpret these results</Link></p>}</div>}
         {job?.status === 'awaiting_selection' && <div className="collection-card">
             <h3>Review ID resolution</h3><p className="collection-note">Multiple matches require a choice. Skipped and unresolved IDs stay isolated in the network.</p>
             <div className="collection-table-wrap"><table><thead><tr><th>Input</th><th>Status</th><th>UniProt mapping</th></tr></thead><tbody>{job.resolution.map(row => <tr key={row.input}><td>{row.input}<small>{row.input_type}</small></td><td>{row.status}</td><td>{row.candidates.length > 1 ? <select aria-label={`Mapping for ${row.input}`} value={choices[row.input] ?? '__choose__'} onChange={e => setChoices(current => ({ ...current, [row.input]: e.target.value || null }))}><option value="__choose__" disabled>Choose a match…</option><option value="">Skip this ID</option>{row.candidates.map(c => <option value={c.id} key={c.id}>{c.gene} · {c.id} · {c.reviewed ? 'reviewed' : 'unreviewed'}</option>)}</select> : row.candidates.length === 1 ? `${row.candidates[0].gene} · ${row.candidates[0].id}` : row.error || 'No match in the selected species'}</td></tr>)}</tbody></table></div>

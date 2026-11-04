@@ -212,24 +212,40 @@ Complete-species Parquet exports include these fields when all databases are sel
 | Predictomes | `Database`, `Interactor_A`, `Interactor_B`, `Interactor_Gene_Name_A`, `Interactor_Gene_Name_B`, `spoc_score`, `kirc_score`, `num_unique_contacts` |
 | HuRI | `Database`, `Interactor_A`, `Interactor_B`, `Interactor_A_UniProt`, `Interactor_B_UniProt`, `Interactor_A_Ensembl`, `Interactor_B_Ensembl` |
 
-## API Endpoints
+## Web server pages and API
 
-- `GET /search`
-- `POST /mitab`
-- `POST /parquet`
+The web app includes **Tutorial** (`/tutorial`), **Help** (`/help`, including how to
+interpret every result), **Web services & Python API** (`/web-services`, every endpoint
+with description and URL), **License** (`/license`) and **Privacy** (`/privacy`) pages.
+It sets no cookies and loads no third-party resources (the Inter font is self-hosted).
+
+- Single search: **Load example** fills in human TP53. Searches can also be linked,
+  e.g. `/?id=P04637&type=UniProtKB&tax=9606&db=String&db=IntAct&run=1`.
+- Collection search: every job gets a private, bookmarkable link `/results/<job_id>`
+  as soon as it is submitted. The page shows queued/running/finished status, keeps
+  working after the browser is closed, and stays available for 14 days
+  (`KLINKPPI_RESULT_RETENTION_DAYS`). The read-only example result is at `/results/example`.
+- Template script: `GET /downloads/klinkppi_template.py` returns `klinkppi_template.py`
+  with the server's API URL filled in; it is linked on the home page.
+- `GET /limits` reports input limits, retention, queue and fair-use limits;
+  `GET /health?details=true` reports data readiness. `/openapi.json` describes every endpoint.
+
+See [deploy/README.md](deploy/README.md) for production deployment (HTTPS reverse
+proxy, `npm run build`, `scripts/prepare_server.py`, `npm run serve`) and all
+configuration variables, including rate limits and the embedding queue.
 
 ## Collection searches
 
 Open **Collection search** beside **Single searches**. Choose a supported species from
 its suggestions, paste a list or upload a CSV/TSV/TXT file, and select the source
 databases and network mode. Files contain one identifier per line, without a header
-or extra columns. Collections support up to 20 distinct identifiers; duplicate rows
+or extra columns. Collections support up to 50 distinct identifiers; duplicate rows
 are merged. Mixed lists detect UniProt accessions/entry names, gene symbols, Ensembl
 IDs and NCBI GeneIDs. Select an explicit identifier type for gene symbols that resemble
 another ID format. UniProt isoforms resolve to their primary accession, so analysis
 runs at the protein-entry level.
 
-The input is labeled **Gene / protein list (up to 20 entries)**. The 20 distinct
+The input is labeled **Gene / protein list (up to 50 entries)**. The 50 distinct
 identifier limit applies to pasted lists, uploaded CSV/TSV/TXT files, and
 `POST /collection/jobs` API requests after trimming and duplicate merging.
 Over-limit requests return a clear error before a job starts.
@@ -292,7 +308,7 @@ same penalties. U/O residues are scored as X while their original letters are re
 in the output. B/Z/X use BLOSUM62 scores. The method and parameters appear below the
 pair list and in each expanded result. Sequence similarity does not establish an interaction.
 Sequences are cached for up to one hour. Alignments run with two workers, at most 64
-retained tasks, a 20,000-residue limit per sequence and 25 million sequence-position
+queued or running tasks (8 per client), a 20,000-residue limit per sequence and 25 million sequence-position
 pairs per alignment. Larger pairs fail explicitly rather than returning partial scores.
 
 Use `POST /collection/jobs/{job_id}/alignments` with `source` and `target` accessions,
@@ -329,9 +345,11 @@ an analysis PDF with the network, settings, mapping report, coverage notes and s
 JSON retains evidence and analysis metadata; SIF records topology only.
 
 Collection jobs run in the background with bounded concurrency and cancellation.
-Up to 12 jobs are retained per server process; inactive jobs expire after one hour.
-Restarting the backend clears them, so use one backend worker for the current local
-job store. Networks are capped at 50,000 pairs, 200,000 retained evidence rows and
+Every job is persisted in SQLite (`Data/jobs/klinkppi_jobs.sqlite3`), survives
+restarts (unfinished jobs resume automatically) and is deleted 14 days after
+submission. Only active jobs count against the queue limits (8 running in total,
+3 per client), so finished results never block new submissions. Use one backend
+worker, because jobs execute in-process. Networks are capped at 50,000 pairs, 200,000 retained evidence rows and
 10,000 additional identifiers for validation. Source failures, ambiguous/unmapped
 interactors and truncated results are reported explicitly. Large networks use a
 circle layout and paginated degree tables to reduce browser work.

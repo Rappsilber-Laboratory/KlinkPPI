@@ -96,7 +96,7 @@ mapping when multiple candidates exist:
 
 ## Collections and reviewable mappings
 
-Collections accept **up to 20 distinct identifiers**, after trimming and merging
+Collections accept **up to 50 distinct identifiers**, after trimming and merging
 duplicate rows. This applies to Python iterables, pasted lists in the web app,
 CSV/TSV/TXT files, and raw API requests. Files use UTF-8 (optional BOM), one ID per
 line, without a header or extra columns. The parser rejects over-limit and

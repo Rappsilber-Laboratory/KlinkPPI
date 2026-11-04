@@ -1,4 +1,4 @@
-"""Resolve, review and analyze up to 20 distinct gene/protein identifiers."""
+"""Resolve, review and analyze up to 50 distinct gene/protein identifiers."""
 import argparse
 import json
 from pathlib import Path
@@ -35,7 +35,7 @@ def main(argv=None):
             job = api.rerun_collection(args.job_id) if args.rerun else api.get_collection(args.job_id)
         else:
             ids = api.read_identifiers(args.file) if args.file else PROTEINS
-            # Duplicate rows merge before the 20 distinct ID limit, as in the UI.
+            # Duplicate rows merge before the 50 distinct ID limit, as in the UI.
             # Species name should match --tax-id when using another organism.
             job = api.start_collection(ids, species_name=args.species_name, tax_id=args.tax_id,
                                        databases=args.databases, mode=args.mode, input_type=args.input_type)

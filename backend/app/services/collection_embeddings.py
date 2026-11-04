@@ -1,11 +1,12 @@
 """On-demand, bounded embedding comparisons using the bundled PLMs framework."""
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+import os
 from threading import Lock
 from time import perf_counter, time
 from uuid import uuid4
 
-from app.services.collection_alignment import protein_sequence, TTL
+from app.services.collection_alignment import ACTIVE, check_capacity, protein_sequence, prune, snapshot_public, TTL
 from app.services.collection_go import validate_unknown_pair
 
 # Deliberately match examples/test_two_seqs_mem.py; larger framework models are not exposed.
@@ -36,16 +37,30 @@ METRICS.update({
     "residue.best_match": "Average of each residue's best cosine match in the other protein, averaged in both directions; higher means more similar residue embeddings, without preserving order.",
     "residue.optimal_transport": "One minus balanced entropic transport cost using residue cosine distance, uniform residue mass, epsilon 0.1 and 100 Sinkhorn iterations; higher means more similar residue distributions.",
 })
+# A public server can restrict the exposed models, e.g. on CPU-only hardware:
+# KLINKPPI_EMBEDDING_MODELS=esm2-8m,esm2-35m,esm2-150m,esmc-300m
+_ALLOWED = [model.strip() for model in os.environ.get("KLINKPPI_EMBEDDING_MODELS", "").split(",") if model.strip()]
+ENABLED_MODELS = tuple(model for model in MODELS if not _ALLOWED or model in _ALLOWED)
 TASKS = {}
 LOCK = Lock()
-MAX_TASKS = 32
+# Strict queueing: only queued/running tasks count against these limits.
+MAX_TASKS = int(os.environ.get("KLINKPPI_MAX_QUEUED_EMBEDDINGS", "16"))
+MAX_TASKS_PER_CLIENT = int(os.environ.get("KLINKPPI_MAX_QUEUED_EMBEDDINGS_PER_CLIENT", "2"))
+MAX_MODELS_PER_REQUEST = int(os.environ.get("KLINKPPI_MAX_MODELS_PER_EMBEDDING", "3"))
+MAX_RETAINED = 1024
 # One model task at a time bounds simultaneous accelerator/model memory usage.
-POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pair-embedding")
+POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("KLINKPPI_EMBEDDING_WORKERS", "1")), thread_name_prefix="pair-embedding")
 
 
 def catalog():
-    return {"models": list(MODELS), "metrics": METRICS,
-            "note": "Embedding similarity does not establish a protein interaction. First use downloads model weights. Sequences are never truncated."}
+    return {"models": list(ENABLED_MODELS), "metrics": METRICS, "max_models_per_request": MAX_MODELS_PER_REQUEST,
+            "note": "Embedding similarity does not establish a protein interaction. Sequences are never truncated."}
+
+
+def queue_position(embedding_id):
+    """Number of queued/running tasks submitted before this one (caller holds LOCK)."""
+    task = TASKS[embedding_id]
+    return sum(other["status"] in ACTIVE and other["created_at"] < task["created_at"] for other in TASKS.values())
 
 
 def snapshot(embedding_id, job_id):
@@ -53,7 +68,12 @@ def snapshot(embedding_id, job_id):
         task = TASKS[embedding_id]
         if task["job_id"] != job_id:
             raise KeyError(embedding_id)
-        result = deepcopy(task)
+        result = snapshot_public(task)
+        if result["status"] == "queued":
+            ahead = queue_position(embedding_id)
+            result["queue_position"] = ahead
+            if ahead:
+                result["progress"] = f"Waiting for embedding worker ({ahead} task{'s' if ahead != 1 else ''} ahead)…"
     if result["status"] == "running":
         result["runtime_seconds"] = max(0, time() - result["started_at"])
     return result
@@ -64,27 +84,26 @@ def update(embedding_id, **values):
         TASKS[embedding_id].update(values)
 
 
-def start(job, source, target, models):
+def start(job, source, target, models, client=None):
     validate_unknown_pair(job, source, target)
-    if not models or len(models) != len(set(models)) or any(model not in MODELS for model in models):
+    if not models or len(models) != len(set(models)) or any(model not in ENABLED_MODELS for model in models):
         raise ValueError("Select one or more distinct supported embedding models from /collection/embedding-models.")
+    if len(models) > MAX_MODELS_PER_REQUEST:
+        raise ValueError(f"Select at most {MAX_MODELS_PER_REQUEST} embedding models per comparison.")
     # Stable order makes duplicate requests independent of checkbox order.
     models = [model for model in MODELS if model in models]
     now = time()
     with LOCK:
-        for key in list(TASKS):
-            if now - TASKS[key]["created_at"] > TTL and TASKS[key]["status"] in {"completed", "failed"}:
-                del TASKS[key]
+        prune(TASKS, now, TTL, MAX_RETAINED)
         for task in TASKS.values():
             if (task["job_id"] == job["job_id"] and task["generation"] == job["created_at"]
                     and {task["source"], task["target"]} == {source, target}
                     and task["models"] == models and task["status"] in {"queued", "running"}):
-                return deepcopy(task)
-        if len(TASKS) >= MAX_TASKS:
-            raise RuntimeError("Embedding capacity reached. Retry after previous tasks expire.")
+                return snapshot_public(task)
+        check_capacity(TASKS, client, MAX_TASKS, MAX_TASKS_PER_CLIENT, "embedding")
         embedding_id = uuid4().hex
         TASKS[embedding_id] = {
-            "embedding_id": embedding_id, "job_id": job["job_id"], "generation": job["created_at"],
+            "embedding_id": embedding_id, "job_id": job["job_id"], "generation": job["created_at"], "client": client,
             "source": source, "target": target, "models": models, "created_at": now,
             "status": "queued", "progress": "Waiting for embedding worker…", "completed_steps": 0,
             "total_steps": 2 + len(models), "runtime_seconds": 0, "result": None, "error": None,

@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from functools import lru_cache
+import os
 from threading import Lock
 from time import time
 from uuid import uuid4
@@ -25,11 +26,16 @@ PARAMETERS = {
 }
 MAX_CELLS = 25_000_000
 MAX_LENGTH = 20_000
-MAX_TASKS = 64
+# Queue limits count only queued/running tasks; finished results stay available
+# for TTL seconds and never block new requests.
+MAX_TASKS = int(os.environ.get("KLINKPPI_MAX_ACTIVE_ALIGNMENTS", "64"))
+MAX_TASKS_PER_CLIENT = int(os.environ.get("KLINKPPI_MAX_ACTIVE_ALIGNMENTS_PER_CLIENT", "8"))
+MAX_RETAINED = 2048
 TTL = 3600
 TASKS = {}
 LOCK = Lock()
-POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pair-alignment")
+POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("KLINKPPI_ALIGNMENT_WORKERS", "2")), thread_name_prefix="pair-alignment")
+ACTIVE = {"queued", "running"}
 
 
 class SequenceLookupError(Exception):
@@ -102,7 +108,7 @@ def snapshot(task_id, job_id):
         task = TASKS[task_id]
         if task["job_id"] != job_id:
             raise KeyError(task_id)
-        return deepcopy(task)
+        return snapshot_public(task)
 
 
 def update(task_id, **values):
@@ -110,21 +116,39 @@ def update(task_id, **values):
         TASKS[task_id].update(values)
 
 
-def start(job, source, target):
+def prune(tasks, now, ttl, retained):
+    """Drop expired finished tasks, then the oldest finished ones above ``retained``."""
+    for key in [key for key, task in tasks.items() if task["status"] not in ACTIVE and now - task["created_at"] > ttl]:
+        del tasks[key]
+    finished = sorted((task["created_at"], key) for key, task in tasks.items() if task["status"] not in ACTIVE)
+    for _, key in finished[:max(0, len(tasks) - retained)]:
+        del tasks[key]
+
+
+def check_capacity(tasks, client, limit, per_client, label):
+    active = [task for task in tasks.values() if task["status"] in ACTIVE]
+    if len(active) >= limit:
+        raise RuntimeError(f"The {label} queue is full ({len(active)} waiting or running). Please retry in a minute.")
+    if client and sum(task.get("client") == client for task in active) >= per_client:
+        raise RuntimeError(f"You already have {per_client} {label} tasks waiting or running. Wait for them to finish.")
+
+
+def snapshot_public(task):
+    return deepcopy({key: value for key, value in task.items() if key != "client"})
+
+
+def start(job, source, target, client=None):
     validate_unknown_pair(job, source, target)
     now = time()
     with LOCK:
-        for key in list(TASKS):
-            if now - TASKS[key]["created_at"] > TTL and TASKS[key]["status"] in {"completed", "failed"}:
-                del TASKS[key]
+        prune(TASKS, now, TTL, MAX_RETAINED)
         for task in TASKS.values():
             if (task["job_id"] == job["job_id"] and task["generation"] == job["created_at"]
                     and task["source"] == source and task["target"] == target and task["status"] in {"queued", "running"}):
-                return deepcopy(task)
-        if len(TASKS) >= MAX_TASKS:
-            raise RuntimeError("Alignment capacity reached. Please retry after previous alignments expire.")
+                return snapshot_public(task)
+        check_capacity(TASKS, client, MAX_TASKS, MAX_TASKS_PER_CLIENT, "alignment")
         task_id = uuid4().hex
-        TASKS[task_id] = {"alignment_id": task_id, "job_id": job["job_id"], "generation": job["created_at"],
+        TASKS[task_id] = {"alignment_id": task_id, "job_id": job["job_id"], "generation": job["created_at"], "client": client,
                           "created_at": now, "source": source, "target": target, "status": "queued",
                           "progress": "Waiting to fetch sequences…", "completed_steps": 0, "total_steps": 3,
                           "result": None, "error": None}

@@ -54,7 +54,7 @@ test('headerless lists handle quotes, BOM, CRLF, duplicates and reject multi-col
     assert.deepEqual(parseIdentifiers('\uFEFF"TP53"\r\nP04637\r\nTP53\r\n'), { ids: ['TP53', 'P04637'], duplicates: 1 })
     assert.throws(() => parseIdentifiers('gene,score\nTP53,0.8'), /one identifier per line/)
     assert.throws(() => parseIdentifiers(' \n'), /at least one/)
-    assert.throws(() => parseIdentifiers(Array.from({ length: 21 }, (_, i) => `gene${i}`).join('\n')), /20/)
+    assert.throws(() => parseIdentifiers(Array.from({ length: 51 }, (_, i) => `gene${i}`).join('\n')), /50/)
 })
 
 test('filters preserve isolated inputs and remove orphan neighbors', () => {
@@ -129,11 +129,11 @@ test('CX has numeric node references, typed source lists, and valid framing', ()
 
  test('collection limit counts distinct IDs after merging duplicates for pasted and file delimiters', () => {
     for (const separator of ['\n', '\r\n']) {
-        const ids = Array.from({ length: 20 }, (_, i) => `gene${i}`)
+        const ids = Array.from({ length: 50 }, (_, i) => `gene${i}`)
         const parsed = parseIdentifiers([...ids, ...ids].join(separator))
-        assert.equal(parsed.ids.length, 20)
-        assert.equal(parsed.duplicates, 20)
-        assert.throws(() => parseIdentifiers([...ids, 'extra'].join(separator)), /20 distinct/)
+        assert.equal(parsed.ids.length, 50)
+        assert.equal(parsed.duplicates, 50)
+        assert.throws(() => parseIdentifiers([...ids, 'extra'].join(separator)), /50 distinct/)
     }
 })
 

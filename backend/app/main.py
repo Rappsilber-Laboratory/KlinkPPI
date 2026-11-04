@@ -1,8 +1,14 @@
 import io
+import logging
+import os
+import re
+import threading
+from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import List, Literal, Optional
-from fastapi import FastAPI,HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI,HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from app.services.convert_input_to_uniprotKB import get_job_id
 from app.services.resolve_string import get_string_interactions
 from app.services.resolve_intact import resolve_intact
@@ -29,9 +35,15 @@ from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
 from app.services import collection_search, collection_go, collection_alignment, collection_analysis, collection_embeddings
+from app.services.job_store import get_store, retention_seconds
+from app.services.rate_limit import RateLimiter
 
 
 from fastapi.middleware.cors import CORSMiddleware
+
+LOGGER = logging.getLogger("klinkppi")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APP_VERSION = "1.0.0"
 
 
 class AuthCredentials(BaseModel):
@@ -49,14 +61,70 @@ class SpeciesPPIDownloadRequest(BaseModel):
     selected_databases: list[str]
     selected_columns: list[str]
 
-app=FastAPI() 
+def _flag(name, default="1"):
+    return os.environ.get(name, default).strip().lower() not in {"0", "off", "false", "no"}
+
+
+def _start_example_build():
+    """Build the permanent tutorial example in the background (needs internet)."""
+    def build():
+        try:
+            species = get_species_by_tax_id("9606")
+            available = set(get_supported_databases("9606"))
+            databases = [db for db in collection_search.EXAMPLE_DATABASES if db in available]
+            job = collection_search.ensure_example(resolve_collection_database, species["display_name"], databases=databases)
+            LOGGER.info("Example collection result: %s", job.get("status"))
+        except Exception:
+            LOGGER.exception("Could not build the example collection result")
+    threading.Thread(target=build, name="klinkppi-example", daemon=True).start()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    collection_search.configure(resolve_collection_database)
+    resumed = collection_search.recover()
+    if resumed:
+        LOGGER.info("Resumed %d unfinished collection jobs", resumed)
+    if _flag("KLINKPPI_BUILD_EXAMPLE"):
+        _start_example_build()
+    yield
+
+
+# Interactive Swagger/ReDoc pages load scripts from a third-party CDN, so they
+# are disabled; the in-app "Web services" page and /openapi.json document the API.
+app=FastAPI(title="KlinkPPI API", version=APP_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+_extra_origins = [origin.strip() for origin in os.environ.get("KLINKPPI_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174","http://127.0.0.1:5174"],
+    allow_origins=["http://localhost:5174","http://127.0.0.1:5174", *_extra_origins],
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+RATE_LIMITER = RateLimiter()
+
+
+def client_id(request: Optional[Request]) -> Optional[str]:
+    """Client address used only in memory for fair-use limits; never stored."""
+    if request is None or request.client is None:
+        return None
+    return request.client.host
+
+
+@app.middleware("http")
+async def fair_use_limits(request: Request, call_next):
+    # When mounted under /api (app.server), match rules against the API-relative path.
+    path, root = request.url.path, request.scope.get("root_path", "")
+    if root and path.startswith(root):
+        path = path[len(root):] or "/"
+    allowed, retry_after, bucket = RATE_LIMITER.check(client_id(request) or "unknown", request.method, path)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={"detail": f"Too many {bucket} requests from your address. Please retry in {retry_after} seconds."},
+        )
+    return await call_next(request)
 
 
 DATABASE_RESOLVERS = {
@@ -123,9 +191,75 @@ def resolve_species_context(tax_id: Optional[str], species_name: Optional[str]):
     return resolved_tax_id, requested_species_name, resolved_species
 
 
+DATA_FILES = {
+    "BioGrid": PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.sqlite3",
+    "Corum": PROJECT_ROOT / "Data" / "Corum" / "corum_allComplexes.json",
+    "HuRI": PROJECT_ROOT / "Data" / "HuRI" / "HuRI_uniprot.tsv",
+    "Predictomes": PROJECT_ROOT / "Data" / "Predictomes" / "Predictomes.csv",
+    "HuMap": PROJECT_ROOT / "Data" / "HuMap" / "humap3.sqlite3",
+}
+
+
+def data_readiness():
+    sources = {name: path.exists() and path.stat().st_size > 0 for name, path in DATA_FILES.items()}
+    try:
+        import plms_framework  # noqa: F401
+        embeddings = True
+    except Exception:
+        embeddings = False
+    example = get_store().load("collection", collection_search.EXAMPLE_JOB_ID)
+    return {"local_sources": sources, "embedding_backend": embeddings,
+            "example_result": example.get("status") if example else "missing"}
+
+
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(details: bool = False):
+    if not details:
+        return {"status": "ok"}
+    readiness = data_readiness()
+    ready = all(readiness["local_sources"].values()) and readiness["embedding_backend"] and readiness["example_result"] == "completed"
+    return {"status": "ok" if ready else "degraded", "version": APP_VERSION, **readiness}
+
+
+@app.get("/limits")
+def service_limits():
+    """Input limits, result retention and fair-use limits shown in the help pages."""
+    return {
+        "version": APP_VERSION,
+        "collection_max_identifiers": collection_search.MAX_INPUTS,
+        "collection_max_edges": collection_search.MAX_EDGES,
+        "result_retention_days": round(retention_seconds() / 86400, 2),
+        "max_active_collection_jobs": collection_search.MAX_ACTIVE_JOBS,
+        "max_active_collection_jobs_per_client": collection_search.MAX_ACTIVE_PER_CLIENT,
+        "max_queued_embeddings": collection_embeddings.MAX_TASKS,
+        "max_queued_embeddings_per_client": collection_embeddings.MAX_TASKS_PER_CLIENT,
+        "max_models_per_embedding": collection_embeddings.MAX_MODELS_PER_REQUEST,
+        "embedding_models": list(collection_embeddings.ENABLED_MODELS),
+        "rate_limits_enabled": RATE_LIMITER.enabled,
+        "rate_limits": RATE_LIMITER.describe(),
+        "example_job_id": collection_search.EXAMPLE_JOB_ID,
+    }
+
+
+# Template scripts are offered for download with this server's API URL filled in.
+DOWNLOADS = {
+    "klinkppi_template.py": PROJECT_ROOT / "klinkppi_template.py",
+    "klinkppi.py": PROJECT_ROOT / "klinkppi.py",
+}
+_BASE_URL_LINE = re.compile(r'^(DEFAULT_BASE_URL = )"[^"]*"', re.M)
+
+
+@app.get("/downloads/{name}")
+def download_script(name: str, request: Request):
+    path = DOWNLOADS.get(name)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Download not found")
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    # url_for includes the mount prefix (/api) when served through app.server.
+    public_url = os.environ.get("KLINKPPI_PUBLIC_API_URL") or str(request.url_for("health")).removesuffix("/health")
+    text = _BASE_URL_LINE.sub(lambda match: f'{match.group(1)}"{public_url}"', text, count=1)
+    return Response(text, media_type="text/x-python; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
 @app.get("/species/search")
@@ -426,7 +560,7 @@ def resolve_collection_database(database_name: str, uniprotkb_id: str, tax_id: s
 
 
 class CollectionRequest(BaseModel):
-    identifiers: list[str] = Field(min_length=1, description="Up to 20 distinct gene/protein identifiers after trimming and duplicate merging.")
+    identifiers: list[str] = Field(min_length=1, description=f"Up to {collection_search.MAX_INPUTS} distinct gene/protein identifiers after trimming and duplicate merging.")
     species_name: str = Field(min_length=1, max_length=200)
     tax_id: Optional[str] = None
     selected_databases: list[str] = Field(min_length=1, max_length=12)
@@ -439,15 +573,16 @@ class CollectionChoices(BaseModel):
 
 
 @app.post("/collection/jobs", status_code=202)
-def start_collection(request: CollectionRequest):
+def start_collection(request: CollectionRequest, http_request: Request = None):
     tax_id, _, species = resolve_species_context(request.tax_id, request.species_name)
     if not tax_id or not species:
         raise HTTPException(status_code=400, detail="Select a supported species before collection search")
+    limit = collection_search.MAX_INPUTS
     identifiers = list(dict.fromkeys(token.strip() for token in request.identifiers if token.strip()))
-    if len(identifiers) > collection_search.MAX_INPUTS:
-        raise HTTPException(status_code=400, detail="Use up to 20 distinct identifiers per collection; duplicates are merged.")
+    if len(identifiers) > limit:
+        raise HTTPException(status_code=400, detail=f"Use up to {limit} distinct identifiers per collection; duplicates are merged.")
     if not identifiers or any(len(token) > 100 for token in identifiers):
-        raise HTTPException(status_code=400, detail="Provide 1–20 distinct identifiers, each at most 100 characters")
+        raise HTTPException(status_code=400, detail=f"Provide 1–{limit} distinct identifiers, each at most 100 characters")
     supported = get_supported_databases(tax_id)
     databases = list(dict.fromkeys(request.selected_databases))
     invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
@@ -455,7 +590,8 @@ def start_collection(request: CollectionRequest):
         raise HTTPException(status_code=400, detail=f"Databases unavailable for this species: {', '.join(invalid)}")
     try:
         return collection_search.create_job(identifiers, tax_id, species["display_name"], databases,
-                                            request.input_type, request.mode, resolve_collection_database)
+                                            request.input_type, request.mode, resolve_collection_database,
+                                            client=client_id(http_request))
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
 
@@ -494,6 +630,8 @@ def cancel_collection(job_id: str):
         return collection_search.cancel_job(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.get("/collection/jobs/{job_id}/analysis")
@@ -552,13 +690,13 @@ class PairAlignmentRequest(BaseModel):
 
 
 @app.post("/collection/jobs/{job_id}/alignments", status_code=202)
-def start_pair_alignment(job_id: str, request: PairAlignmentRequest):
+def start_pair_alignment(job_id: str, request: PairAlignmentRequest, http_request: Request = None):
     try:
         job = collection_search.snapshot(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection job not found or expired")
     try:
-        return collection_alignment.start(job, request.source, request.target)
+        return collection_alignment.start(job, request.source, request.target, client=client_id(http_request))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
@@ -584,14 +722,15 @@ def collection_embedding_models():
 
 
 @app.post("/collection/jobs/{job_id}/embeddings", status_code=202)
-def start_pair_embedding(job_id: str, request: PairEmbeddingRequest):
+def start_pair_embedding(job_id: str, request: PairEmbeddingRequest, http_request: Request = None):
     """Queue distances for selected ESM-2, ESM-1b, ESM-1v or ESM-C models."""
     try:
         job = collection_search.snapshot(job_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection job not found or expired")
     try:
-        return collection_embeddings.start(job, request.source, request.target, request.models)
+        return collection_embeddings.start(job, request.source, request.target, request.models,
+                                           client=client_id(http_request))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:

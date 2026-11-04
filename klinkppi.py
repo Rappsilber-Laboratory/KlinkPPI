@@ -27,7 +27,7 @@ class KlinkPPIError(RuntimeError):
 
 
 class KlinkPPIClient:
-    def __init__(self, base_url: str = "http://127.0.0.1:8000", timeout: float = 60, session=None):
+    def __init__(self, base_url: str = os.environ.get("KLINKPPI_API_URL", "http://127.0.0.1:8000"), timeout: float = 60, session=None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.session = session if session is not None else requests.Session()
@@ -119,15 +119,15 @@ class KlinkPPIClient:
 
     @staticmethod
     def normalize_identifiers(identifiers):
-        """Trim and merge duplicates before enforcing the web app's 20-ID limit."""
+        """Trim and merge duplicates before enforcing the web app's 50-ID limit."""
         if isinstance(identifiers, str):
             raise ValueError("Pass a list of identifiers, or use read_identifiers for a file.")
         values = list(identifiers)
         if any(not isinstance(value, str) for value in values):
             raise ValueError("Every identifier must be a string.")
         ids = list(dict.fromkeys(value.strip() for value in values if value.strip()))
-        if not 1 <= len(ids) <= 20:
-            raise ValueError("Use 1–20 distinct identifiers per collection; duplicates are merged.")
+        if not 1 <= len(ids) <= 50:
+            raise ValueError("Use 1–50 distinct identifiers per collection; duplicates are merged.")
         if any(len(value) > 100 for value in ids):
             raise ValueError("Identifiers must be at most 100 characters each.")
         return ids

@@ -1,5 +1,7 @@
+import os; os.environ.setdefault("KLINKPPI_JOB_DB", ":memory:"); os.environ.setdefault("KLINKPPI_BUILD_EXAMPLE", "0")  # noqa: E702
 import unittest
 from threading import Event
+from time import time
 from unittest.mock import Mock, patch
 import requests
 from app.services import collection_search as cs
@@ -25,11 +27,11 @@ def response(entries, next_url=None):
 class ResolutionTests(unittest.TestCase):
     @patch.object(cs.POOL, 'submit')
     def test_collection_limit_counts_distinct_trimmed_inputs(self, submit):
-        ids = [f"gene{i}" for i in range(20)]
+        ids = [f"gene{i}" for i in range(50)]
         job = cs.create_job(ids + [f" {value} " for value in ids], "9606", "Human", ["IntAct"], "auto", "induced", Mock())
         try:
             self.assertEqual(cs.JOBS[job['job_id']]['tokens'], ids)
-            with self.assertRaisesRegex(ValueError, '20 distinct'):
+            with self.assertRaisesRegex(ValueError, '50 distinct'):
                 cs.create_job(ids + ['extra'], "9606", "Human", ["IntAct"], "auto", "induced", Mock())
         finally:
             cs.JOBS.pop(job['job_id'], None)
@@ -242,7 +244,7 @@ class NetworkTests(unittest.TestCase):
                 old_cancel = Event()
                 old_cancel.set()
                 cs.JOBS[job_id] = {
-                    'job_id': job_id, 'created_at': 0, 'status': 'completed', 'cancel': old_cancel,
+                    'job_id': job_id, 'created_at': time() - 60, 'status': 'completed', 'cancel': old_cancel,
                     'tokens': ['TP53', 'BRCA1', 'skip'], 'input_type': 'Gene_Name',
                     'resolution': [{'input': token, 'candidates': candidates} for token, candidates in
                                    [('TP53', [self.a, self.c]), ('BRCA1', [self.b]), ('skip', [self.d])]],
@@ -261,7 +263,7 @@ class NetworkTests(unittest.TestCase):
                         self.assertEqual(result['selections'], {'TP53': self.a['id'], 'BRCA1': self.b['id'], 'skip': None})
                         self.assertEqual(result['database_statuses']['IntAct']['status'], 'pending')
                         self.assertFalse(cs.JOBS[job_id]['cancel'].is_set())
-                        self.assertGreater(result['created_at'], 0)
+                        self.assertGreater(result['created_at'], time() - 30)
                         submit.assert_called_once_with(cs._network_job, job_id)
                         # Repeated clicks cannot enqueue a second rerun.
                         with self.assertRaisesRegex(ValueError, 'completed collection'):

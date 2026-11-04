@@ -1,3 +1,4 @@
+export const MAX_IDENTIFIERS = 50
 export const DATABASES = ['String', 'IntAct', 'BioGrid', 'Corum', 'HuRI', 'Predictomes', 'ComplexPortal', 'Reactome', 'Signor', 'Hippie', 'HuMap', 'Mint']
 export const COLORS = { String: '#0284c7', IntAct: '#c026d3', BioGrid: '#059669', Corum: '#d97706', HuRI: '#e11d48', Predictomes: '#4f46e5', ComplexPortal: '#0891b2', Reactome: '#65a30d', Signor: '#dc2626', Hippie: '#0d9488', HuMap: '#7c3aed', Mint: '#db2777' }
 export const LABELS = { String: 'STRING', BioGrid: 'BioGRID', Corum: 'CORUM', Signor: 'SIGNOR', Hippie: 'HIPPIE', HuMap: 'hu.MAP', ComplexPortal: 'Complex Portal' }
@@ -27,7 +28,7 @@ export function parseIdentifiers(text) {
     }
     const ids = [...new Set(result)]
     if (!ids.length) throw new Error('Paste or upload at least one identifier.')
-    if (ids.length > 20) throw new Error('Use up to 20 distinct identifiers per collection.')
+    if (ids.length > MAX_IDENTIFIERS) throw new Error(`Use up to ${MAX_IDENTIFIERS} distinct identifiers per collection.`)
     return { ids, duplicates: result.length - ids.length }
 }
 

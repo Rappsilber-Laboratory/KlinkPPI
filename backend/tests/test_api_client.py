@@ -1,4 +1,5 @@
 """Offline HTTP-contract checks: actual ASGI routing, no external service calls."""
+import os; os.environ.setdefault("KLINKPPI_JOB_DB", ":memory:"); os.environ.setdefault("KLINKPPI_BUILD_EXAMPLE", "0")  # noqa: E702
 import asyncio
 from contextlib import ExitStack, redirect_stdout
 import importlib
@@ -210,11 +211,11 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
             folder = Path(directory)
             for suffix, delimiter in (("csv", "\n"), ("tsv", "\r\n"), ("txt", "\n")):
                 path = folder / f"ids.{suffix}"
-                ids = [f"gene{i}" for i in range(20)]
+                ids = [f"gene{i}" for i in range(50)]
                 path.write_text('\ufeff' + delimiter.join(ids + ids))
                 self.assertEqual(self.api.read_identifiers(path), ids)
                 path.write_text(delimiter.join(ids + ["extra"]))
-                with self.assertRaisesRegex(ValueError, "20 distinct"):
+                with self.assertRaisesRegex(ValueError, "50 distinct"):
                     self.api.read_identifiers(path)
             path.write_text("gene,extra\nTP53,value")
             with self.assertRaisesRegex(ValueError, "one identifier"):

@@ -1,25 +1,43 @@
 """Bounded, cancellable collection searches with explicit ID disambiguation.
 
-Jobs are local to this server process and expire after one hour. No source score
-is treated as a probability or combined across incompatible database scales.
+Every job is written through to a durable SQLite store (see job_store.py), so
+results survive restarts and remain reachable at their bookmarkable link for the
+retention period (KLINKPPI_RESULT_RETENTION_DAYS, default 14 days). Only active
+jobs and recently viewed results are kept in memory. No source score is treated
+as a probability or combined across incompatible database scales.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from threading import Event, Lock
-from time import time
+from time import sleep, time
 from uuid import uuid4
+import logging
 import math
+import os
 import re
 
 import requests
 
+from app.services.job_store import get_store, retention_seconds
+
+LOGGER = logging.getLogger(__name__)
 API = "https://rest.uniprot.org/uniprotkb"
-MAX_INPUTS = 20
+MAX_INPUTS = 50
 MAX_EDGES = 50000
 MAX_ENDPOINTS = 10000
-MAX_JOBS = 12
-TTL = 3600
-POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="collection-jobs")
+# Queue limits: only resolving/running jobs count, so finished results never
+# block new submissions (the former "12 retained jobs" limit).
+MAX_ACTIVE_JOBS = int(os.environ.get("KLINKPPI_MAX_ACTIVE_COLLECTION_JOBS", "8"))
+MAX_ACTIVE_PER_CLIENT = int(os.environ.get("KLINKPPI_MAX_ACTIVE_COLLECTION_JOBS_PER_CLIENT", "3"))
+MEMORY_TTL = 3600  # finished jobs leave memory after an hour without access; SQLite keeps them
+KIND = "collection"
+ACTIVE = {"resolving", "running"}
+PRIVATE = {"cancel", "resolver", "client", "accessed_at"}
+EXAMPLE_JOB_ID = "example"
+EXAMPLE_IDENTIFIERS = ["P04217", "P00751", "P56211", "P53539", "P00790", "Q02241", "P30556", "P04181", "P11241", "Q9Y265"]
+EXAMPLE_DATABASES = ["String", "IntAct", "BioGrid", "Corum", "HuRI", "ComplexPortal", "Reactome", "Signor"]
+DEFAULT_RESOLVER = None
+POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("KLINKPPI_COLLECTION_WORKERS", "2")), thread_name_prefix="collection-jobs")
 JOBS = {}
 LOCK = Lock()
 ACCESSION = re.compile(r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?$", re.I)
@@ -134,36 +152,105 @@ def resolve_tokens(tokens, tax_id, input_type="auto", cancel=None):
     return matches, errors
 
 
+def configure(resolver):
+    """Resolver used for jobs reloaded from the durable store after a restart."""
+    global DEFAULT_RESOLVER
+    DEFAULT_RESOLVER = resolver
+
+
+def _expired(job, now=None):
+    if job.get("pinned") or job.get("status") in ACTIVE:
+        return False
+    created = job.get("created_at")
+    return created is not None and (now or time()) - created > retention_seconds()
+
+
+def _public(job):
+    data = {k: v for k, v in job.items() if k not in PRIVATE}
+    if data.get("created_at") is not None:
+        data["expires_at"] = None if job.get("pinned") else data["created_at"] + retention_seconds()
+    return data
+
+
+def _persist_locked(job_id):
+    """Write a job through to SQLite; the caller holds LOCK."""
+    job = JOBS.get(job_id)
+    if not job or "job_id" not in job:
+        return
+    try:
+        get_store().save(KIND, {k: v for k, v in job.items() if k not in PRIVATE}, pinned=bool(job.get("pinned")))
+    except Exception:  # Persistence failure must not break a running analysis.
+        LOGGER.exception("Could not persist collection job %s", job_id)
+
+
+def _load_locked(job_id):
+    """Return the in-memory job, reloading it from SQLite when needed."""
+    job = JOBS.get(job_id)
+    if job is None:
+        stored = get_store().load(KIND, job_id)
+        if stored is None:
+            raise KeyError(job_id)
+        stored.pop("expires_at", None)
+        job = JOBS[job_id] = {**stored, "cancel": Event(), "resolver": DEFAULT_RESOLVER}
+    if _expired(job):
+        JOBS.pop(job_id, None)
+        get_store().delete(KIND, job_id)
+        raise KeyError(job_id)
+    job["accessed_at"] = time()
+    return job
+
+
+def _housekeeping_locked(now):
+    for key, job in list(JOBS.items()):
+        if job.get("status") in ACTIVE or job.get("pinned"):
+            continue
+        if _expired(job, now) or now - job.get("accessed_at", job.get("created_at", now)) > MEMORY_TTL:
+            del JOBS[key]
+    try:
+        get_store().purge(KIND, now - retention_seconds(), keep_statuses=ACTIVE)
+    except Exception:
+        LOGGER.exception("Could not purge expired collection jobs")
+
+
 def snapshot(job_id):
     with LOCK:
-        job = JOBS[job_id]
-        return deepcopy({k: v for k, v in job.items() if k not in {"cancel", "resolver"}})
+        return deepcopy(_public(_load_locked(job_id)))
 
 
 def patch(job_id, **values):
     with LOCK:
         JOBS[job_id].update(values)
+        _persist_locked(job_id)
 
 
-def create_job(tokens, tax_id, species, databases, input_type, mode, resolver):
+def create_job(tokens, tax_id, species, databases, input_type, mode, resolver, *, client=None, job_id=None, pinned=False):
     tokens = list(dict.fromkeys(token.strip() for token in tokens if token.strip()))
     if not tokens or len(tokens) > MAX_INPUTS:
-        raise ValueError("Use 1–20 distinct identifiers per collection; duplicates are merged.")
+        raise ValueError(f"Use 1–{MAX_INPUTS} distinct identifiers per collection; duplicates are merged.")
     with LOCK:
         now = time()
-        for key in list(JOBS):
-            if now - JOBS[key]["created_at"] > TTL and JOBS[key]["status"] not in {"resolving", "running"}:
-                del JOBS[key]
-        if len(JOBS) >= MAX_JOBS:
-            raise ValueError("Collection job capacity reached. Cancel unused jobs or retry after jobs expire.")
-        job_id = uuid4().hex
+        _housekeeping_locked(now)
+        if not pinned:
+            active = [job for job in JOBS.values() if job.get("status") in ACTIVE]
+            if len(active) >= MAX_ACTIVE_JOBS:
+                raise ValueError(f"The server is busy ({len(active)} collection analyses are running). Please retry in a minute; finished results are not affected.")
+            if client and sum(job.get("client") == client for job in active) >= MAX_ACTIVE_PER_CLIENT:
+                raise ValueError(f"You already have {MAX_ACTIVE_PER_CLIENT} collection analyses running. Wait for one to finish or cancel it.")
+        job_id = job_id or uuid4().hex
         JOBS[job_id] = {"job_id": job_id, "created_at": now, "tax_id": tax_id, "species": species,
                         "databases": databases, "mode": mode, "status": "resolving", "progress": "Resolving identifiers…",
                         "tokens": tokens, "input_type": input_type, "cancel": Event(), "resolver": resolver,
+                        "client": client, "pinned": pinned, "accessed_at": now,
                         "resolution": [], "warnings": [], "graph": None,
                         "database_statuses": {db: {"status": "pending", "completed": 0, "total": 0, "errors": 0} for db in databases}}
+        _persist_locked(job_id)
     POOL.submit(_resolve_job, job_id)
     return snapshot(job_id)
+
+
+def _read_only(job, internal):
+    if job.get("pinned") and not internal:
+        raise ValueError("The example result is read-only. Load the example into the form to run your own copy.")
 
 
 def _resolve_job(job_id):
@@ -180,9 +267,10 @@ def _resolve_job(job_id):
             patch(job_id, status="failed", progress=str(exc))
 
 
-def run_job(job_id, choices):
+def run_job(job_id, choices, *, internal=False):
     with LOCK:
-        job = JOBS[job_id]
+        job = _load_locked(job_id)
+        _read_only(job, internal)
         if job["status"] != "awaiting_selection":
             raise ValueError("Job is not ready for analysis")
         selections = {}
@@ -197,31 +285,94 @@ def run_job(job_id, choices):
                 raise ValueError(f"Choose a candidate or explicitly skip {row['input']}")
             selections[row["input"]] = selected or None
         job.update(status="running", progress="Querying selected databases…", selections=selections)
+        _persist_locked(job_id)
     POOL.submit(_network_job, job_id)
     return snapshot(job_id)
 
 
-def rerun_job(job_id):
+def rerun_job(job_id, *, internal=False):
     """Repeat database queries with the original inputs and reviewed mappings."""
     with LOCK:
-        job = JOBS[job_id]
+        job = _load_locked(job_id)
+        _read_only(job, internal)
         if job["status"] != "completed":
             raise ValueError("Only a completed collection can be rerun")
         job.update(status="running", progress="Querying selected databases again…", graph=None,
                    warnings=[], cancel=Event(), created_at=time(),
                    database_statuses={db: {"status": "pending", "completed": 0, "total": 0, "errors": 0}
                                       for db in job["databases"]})
+        _persist_locked(job_id)
     POOL.submit(_network_job, job_id)
     return snapshot(job_id)
 
 
 def cancel_job(job_id):
     with LOCK:
-        job = JOBS[job_id]
+        job = _load_locked(job_id)
+        _read_only(job, False)
         job["cancel"].set()
         if job["status"] in {"resolving", "running", "awaiting_selection"}:
             job.update(status="cancelled", progress="Cancelled")
+            _persist_locked(job_id)
     return snapshot(job_id)
+
+
+def recover():
+    """Resume jobs that were queued or running when the server stopped."""
+    try:
+        stored_jobs = get_store().load_by_status(KIND, ACTIVE)
+    except Exception:
+        LOGGER.exception("Could not read unfinished collection jobs")
+        return 0
+    resumed = 0
+    for stored in stored_jobs:
+        job_id = stored["job_id"]
+        stored.pop("expires_at", None)
+        with LOCK:
+            if job_id in JOBS:
+                continue
+            JOBS[job_id] = {**stored, "cancel": Event(), "resolver": DEFAULT_RESOLVER, "accessed_at": time(),
+                            "progress": "Resumed after a server restart…"}
+            _persist_locked(job_id)
+        POOL.submit(_resolve_job if stored["status"] == "resolving" else _network_job, job_id)
+        resumed += 1
+    return resumed
+
+
+def example_choices(resolution):
+    """Deterministic mapping review for the example: first reviewed match, else skip."""
+    choices = {}
+    for row in resolution:
+        if len(row["candidates"]) > 1:
+            reviewed = [c for c in row["candidates"] if c.get("reviewed")]
+            choices[row["input"]] = (reviewed or row["candidates"])[0]["id"]
+    return choices
+
+
+def ensure_example(resolver, species, *, tax_id="9606", databases=None, force=False, timeout=1800):
+    """Build the permanent, read-only example result used by the tutorial.
+
+    It is pinned (never expires), cannot be rerun or cancelled through the API,
+    and is rebuilt only when missing, failed, or when ``force`` is set.
+    """
+    stored = get_store().load(KIND, EXAMPLE_JOB_ID)
+    if stored and not force and stored.get("status") in ACTIVE | {"completed", "awaiting_selection"}:
+        if stored["status"] != "awaiting_selection":
+            return stored
+    else:
+        with LOCK:
+            JOBS.pop(EXAMPLE_JOB_ID, None)
+        create_job(EXAMPLE_IDENTIFIERS, tax_id, species, list(databases or EXAMPLE_DATABASES), "UniProtKB",
+                   "induced", resolver, job_id=EXAMPLE_JOB_ID, pinned=True)
+    deadline = time() + timeout
+    while time() < deadline:
+        job = snapshot(EXAMPLE_JOB_ID)
+        if job["status"] == "awaiting_selection":
+            run_job(EXAMPLE_JOB_ID, example_choices(job["resolution"]), internal=True)
+        elif job["status"] not in ACTIVE:
+            return job
+        sleep(2)
+    return snapshot(EXAMPLE_JOB_ID)
 
 
 def values(value):
@@ -417,6 +568,7 @@ def _network_job(job_id):
         with LOCK:
             if not job["cancel"].is_set():
                 job.update(graph=graph, warnings=warnings, status="completed", progress="Analysis complete")
+                _persist_locked(job_id)
     except Exception as exc:
         if not job["cancel"].is_set():
             patch(job_id, status="failed", progress=str(exc))

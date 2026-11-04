@@ -1,3 +1,4 @@
+import os; os.environ.setdefault("KLINKPPI_JOB_DB", ":memory:"); os.environ.setdefault("KLINKPPI_BUILD_EXAMPLE", "0")  # noqa: E702
 import unittest
 from unittest.mock import Mock, patch
 

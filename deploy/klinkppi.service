@@ -1,0 +1,19 @@
+# systemd unit: copy to /etc/systemd/system/klinkppi.service, adjust paths/user,
+# then: systemctl daemon-reload && systemctl enable --now klinkppi
+[Unit]
+Description=KlinkPPI web server
+After=network-online.target
+
+[Service]
+User=klinkppi
+WorkingDirectory=/srv/KlinkPPI/backend
+Environment=KLINKPPI_RESULT_RETENTION_DAYS=14
+Environment=KLINKPPI_PUBLIC_API_URL=https://klinkppi.example.org/api
+# Optional on CPU-only servers: expose only the smaller embedding models.
+# Environment=KLINKPPI_EMBEDDING_MODELS=esm2-8m,esm2-35m,esm2-150m,esmc-300m
+ExecStart=/srv/KlinkPPI/.venv/bin/python -m uvicorn app.server:application --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

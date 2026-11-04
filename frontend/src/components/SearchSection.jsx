@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import SpeciesDownloadPanel from './SpeciesDownloadPanel'
+import Link from './Link'
+import { SINGLE_EXAMPLE } from '../lib/examples'
+
+const INPUT_TYPES = ['UniProtKB', 'GeneID', 'Ensembl', 'Gene_Name']
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
 
@@ -69,19 +73,35 @@ const DATABASE_STYLES = {
     Mint: { chip: 'bg-pink-100 text-pink-800 border-pink-200', accent: 'bg-pink-500', label: 'text-pink-800', surface: 'bg-pink-50 border-pink-200' },
 }
 
+// Shareable searches: /?id=P04637&type=UniProtKB&tax=9606&db=String&db=IntAct&run=1
+function inputsFromUrl() {
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('id')?.trim()
+    if (!id) return null
+    return {
+        id: id.toUpperCase(),
+        type: INPUT_TYPES.includes(params.get('type')) ? params.get('type') : 'UniProtKB',
+        species: params.get('species') || '',
+        taxId: params.get('tax') || '',
+        databases: params.getAll('db').filter(db => ALL_DATABASES.includes(db)),
+        run: params.get('run') === '1',
+    }
+}
+
 const SearchSection = ({setresults}) => {
+    const [urlInputs] = useState(inputsFromUrl)
     const [search_type, setsearch_type] = useState('single_search');
-    const [from_database,setfrom_database]=useState('UniProtKB');
-    const[protein_id,setprotein_id]=useState('');
-    const [tax_id,settax_id]=useState('');
-    const [species_name,setspecies_name]=useState('');
+    const [from_database,setfrom_database]=useState(urlInputs?.type || 'UniProtKB');
+    const[protein_id,setprotein_id]=useState(urlInputs?.id || '');
+    const [tax_id,settax_id]=useState(urlInputs?.taxId || '');
+    const [species_name,setspecies_name]=useState(urlInputs?.species || '');
     const [speciesSuggestions,setspeciesSuggestions]=useState([])
     const [showSpeciesSuggestions,setshowSpeciesSuggestions]=useState(false)
     const [geneCandidates,setgeneCandidates]=useState([])
     const [selectedGeneCandidate,setselectedGeneCandidate]=useState(null)
     const [speciesJob,setspeciesJob]=useState(null)
     const [speciesLogOpen,setspeciesLogOpen]=useState(true)
-    const [selected_databases,setselected_databases]=useState([])
+    const [selected_databases,setselected_databases]=useState(urlInputs?.databases || [])
     const [databaseStatuses,setDatabaseStatuses]=useState({})
     const [loading,setloading]=useState(false)
     const [loadingMessage,setloadingMessage]=useState('Searching databases...')
@@ -181,7 +201,12 @@ const SearchSection = ({setresults}) => {
         }
     }, [speciesJob])
 
-    const performMainSearch = async (idValue, sourceDatabase) => {
+    const performMainSearch = async (idValue, sourceDatabase, overrides = {}) => {
+        const taxValue = overrides.taxId ?? tax_id
+        const speciesValue = overrides.speciesName ?? species_name
+        const databaseValue = overrides.databases ?? selected_databases
+        const originalInput = overrides.originalInput ?? protein_id
+        const originalType = overrides.originalType ?? from_database
         const mappingLabels = {
             GeneID: 'NCBI GeneID',
             Ensembl: 'Ensembl ID',
@@ -194,7 +219,7 @@ const SearchSection = ({setresults}) => {
         )
         setloading(true)
         setresults(null)
-        const requestedDatabases = selected_databases.length > 0 ? selected_databases : ALL_DATABASES
+        const requestedDatabases = databaseValue.length > 0 ? databaseValue : ALL_DATABASES
         setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => [database, 'running'])))
         abortController.current = new AbortController()
 
@@ -204,16 +229,16 @@ const SearchSection = ({setresults}) => {
                 from_database: sourceDatabase
             })
 
-            if (tax_id.trim()) {
-                params.set('tax_id', tax_id.trim())
+            if (String(taxValue).trim()) {
+                params.set('tax_id', String(taxValue).trim())
             }
 
-            if (species_name.trim()) {
-                params.set('species_name', species_name.trim())
+            if (speciesValue.trim()) {
+                params.set('species_name', speciesValue.trim())
             }
 
-            if(selected_databases.length>0){
-                selected_databases.forEach(value => params.append('selected_databases', value))
+            if(databaseValue.length>0){
+                databaseValue.forEach(value => params.append('selected_databases', value))
             }
 
             const response=await fetch(`${API_BASE_URL}/search?${params.toString()}`,{signal: abortController.current.signal});
@@ -224,8 +249,8 @@ const SearchSection = ({setresults}) => {
             }
 
             if (data?.[0]?.Input) {
-                data[0].Input.OriginalInput = protein_id
-                data[0].Input.OriginalInputType = from_database
+                data[0].Input.OriginalInput = originalInput
+                data[0].Input.OriginalInputType = originalType
                 data[0].Input.ResolvedSearchId = idValue
             }
 
@@ -237,7 +262,7 @@ const SearchSection = ({setresults}) => {
                 return [database, failed ? 'failed' : 'completed']
             })))
             settax_id(data?.[0]?.Input?.TaxonomyId || '')
-            setspecies_name(data?.[0]?.Input?.SpeciesName || species_name)
+            setspecies_name(data?.[0]?.Input?.SpeciesName || speciesValue)
             setshowSpeciesSuggestions(false)
             console.log(data);
         }catch(error){
@@ -437,6 +462,31 @@ const SearchSection = ({setresults}) => {
         await performMainSearch(candidate.primary_accession, 'UniProtKB')
     }
 
+    const applyInputs = ({ id, type, species, taxId, databases }) => {
+        clearGeneCandidateState()
+        setsearch_type('single_search')
+        setfrom_database(type)
+        setprotein_id(id)
+        setspecies_name(species)
+        settax_id(taxId)
+        setselected_databases(databases)
+        setspeciesSuggestions([])
+        setshowSpeciesSuggestions(false)
+    }
+
+    const loadExample = () => applyInputs(SINGLE_EXAMPLE)
+
+    // A shared link with run=1 starts its search once on page load.
+    useEffect(() => {
+        if (!urlInputs?.run || urlInputs.type === 'Gene_Name') return
+        const timer = window.setTimeout(() => performMainSearch(urlInputs.id, urlInputs.type, {
+            taxId: urlInputs.taxId, speciesName: urlInputs.species, databases: urlInputs.databases,
+            originalInput: urlInputs.id, originalType: urlInputs.type,
+        }), 0)
+        return () => window.clearTimeout(timer)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
 
   return (
     <div>
@@ -522,6 +572,10 @@ const SearchSection = ({setresults}) => {
         </div>
         
         <div className="flex flex-col gap-4">
+    <div className="single-example-bar">
+        <button type="button" onClick={loadExample} className="single-example-button">Load example</button>
+        <span className="text-sm text-slate-600">Fills in human TP53 (UniProtKB P04637) and eight sources. <Link to="/help#single-results" className="underline">How to read the results</Link></span>
+    </div>
     <label className='font-bold text-left'>Search Type</label>
         <select
             value={search_type}

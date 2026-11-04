@@ -1,49 +1,41 @@
+# ---- Python ----
 .venv/
+venv/
 __pycache__/
-*.pyc
-.env
-Data/
-*.tsv
-*.txt
-test*.py
-Data
-*.html
-*.tsv
-*.node
-*.cjs
-*.json
-*.js
-*.mjs
-*.mts
-!package.json
-!package-lock.json
-!scripts/
-!scripts/*.mjs
-frontend/node_modules/*
-!tests/
-!tests/test_extended_databases.py
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
 
-# Collection analysis source and regression tests
-!frontend/src/collection/*.js
-!frontend/tests/
-!frontend/tests/*.js
-!backend/tests/
-!backend/tests/test_collection_search.py
-!backend/tests/test_collection_evidence.py
-!backend/tests/test_collection_go.py
-!backend/tests/test_collection_alignment.py
-!backend/tests/test_collection_api.py
-
+# ---- Node / frontend build ----
+node_modules/
 frontend/dist/
+*.log
+npm-debug.log*
 
-# Public API client regression tests and generated example output
-!backend/tests/test_api_client.py
+# ---- Local data, caches and runtime state (rebuilt by scripts/prepare_server.py) ----
+Data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.part
+
+# ---- Generated outputs ----
 api_example_outputs/
-api_downloads/
+klinkppi_output/
 
-# Bundled framework source, examples, tests and dependency manifest
-!embedding_FW/requirements.txt
-!embedding_FW/examples/*.py
-!embedding_FW/examples/*.json
-!embedding_FW/tests/*.py
-!backend/tests/test_collection_embeddings.py
+# ---- Separate repository (cloned during installation, see README) ----
+embedding_FW/
+
+# ---- Secrets and local settings ----
+.env
+.env.*
+.claude/
+
+# ---- OS / editor files ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp

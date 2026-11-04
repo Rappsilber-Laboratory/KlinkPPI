@@ -1,9 +1,21 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import './App.css'
 import Navbar from './components/Navbar'
 import SearchSection from './components/SearchSection'
 import './collection/collection.css'
+import './pages/pages.css'
+import { navigate, usePath } from './lib/routing'
+import Link from './components/Link'
 const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
+const PAGES = {
+    '/help': lazy(() => import('./pages/HelpPage')),
+    '/tutorial': lazy(() => import('./pages/TutorialPage')),
+    '/web-services': lazy(() => import('./pages/WebServicesPage')),
+    '/license': lazy(() => import('./pages/LicensePage')),
+    '/privacy': lazy(() => import('./pages/PrivacyPage')),
+}
+const PAGE_TITLES = { '/help': 'Help', '/tutorial': 'Tutorial', '/web-services': 'Web services', '/license': 'License', '/privacy': 'Privacy' }
+const SITE_TITLE = 'KlinkPPI'
 import InputSummary from './components/InputSummary'
 import InteractionOverlapLog from './components/InteractionOverlapLog'
 import StringResults from './components/StringResults'
@@ -81,9 +93,25 @@ const NoResults = ({ dbName, reason }) => (
 
 
 function App() {
+    const path = usePath()
+    const resultMatch = path.match(/^\/results\/([^/]+)\/?$/)
+    const resultJobId = resultMatch ? decodeURIComponent(resultMatch[1]) : null
+    const isHome = path === '/' || Boolean(resultJobId)
+    const Page = PAGES[path.replace(/\/+$/, '')]
     const [results, setresults] = useState(null)
-    const [searchTab, setSearchTab] = useState('single')
-    const [collectionOpened, setCollectionOpened] = useState(false)
+    const [searchTab, setSearchTab] = useState(resultJobId ? 'collection' : 'single')
+    const [collectionOpened, setCollectionOpened] = useState(Boolean(resultJobId))
+    const [shownJobId, setShownJobId] = useState(resultJobId)
+    // Opening a /results/<id> link switches to the collection tab.
+    if (resultJobId !== shownJobId) {
+        setShownJobId(resultJobId)
+        if (resultJobId) { setSearchTab('collection'); setCollectionOpened(true) }
+    }
+
+    useEffect(() => {
+        const pageTitle = PAGE_TITLES[path.replace(/\/+$/, '')] || (resultJobId ? 'Result' : '')
+        document.title = pageTitle ? `${pageTitle} · ${SITE_TITLE}` : `${SITE_TITLE}: Analysing Interaction Evidence and Gaps in Protein Sets`
+    }, [path, resultJobId])
 
     const stringData = results?.[1]?.output?.find(db => db.String)
     const intactData = results?.[1]?.output?.find(db => db.IntAct)
@@ -104,14 +132,19 @@ function App() {
 
     return (
         <div className="app-shell min-h-screen flex flex-col">
-            <Navbar />
-            <main className="app-main flex-1">
+            <Navbar path={path} />
+            {!isHome && <main className="app-main flex-1">
+                <Suspense fallback={<p className="doc-page app-frame mx-auto">Loading…</p>}>
+                    {Page ? <Page /> : <div className="doc-page app-frame mx-auto"><h1>Page not found</h1><p><Link to="/">Go to the search page</Link></p></div>}
+                </Suspense>
+            </main>}
+            <main className="app-main flex-1" hidden={!isHome}>
                 <div className="search-tabs" role="tablist" aria-label="Search workflows">
                     <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => setSearchTab('single')}>Single searches</button>
                     <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => { setSearchTab('collection'); setCollectionOpened(true) }}>Collection search</button>
                 </div>
                 <div id="collection-search-panel" role="tabpanel" aria-labelledby="collection-search-tab" hidden={searchTab !== 'collection'}>
-                    <Suspense fallback={<p className="collection-shell">Loading collection search…</p>}>{collectionOpened && <CollectionSearch />}</Suspense>
+                    <Suspense fallback={<p className="collection-shell">Loading collection search…</p>}>{collectionOpened && <CollectionSearch initialJobId={resultJobId} onJobChange={jobId => navigate(`/results/${encodeURIComponent(jobId)}`)} />}</Suspense>
                 </div>
                 <div id="single-search-panel" role="tabpanel" aria-labelledby="single-search-tab" hidden={searchTab !== 'single'}>
                 <SearchSection setresults={setresults} />
@@ -169,17 +202,16 @@ function App() {
 
             <footer className="app-footer border-t border-slate-300 px-4 py-6 text-sm text-slate-700 sm:px-6">
                 <div className="app-frame mx-auto flex w-full flex-col gap-2">
-                    <p className="font-medium text-slate-900">Free access statement</p>
+                    <p className="font-medium text-slate-900">Free and open to all users</p>
                     <p>
-                        KlinkPPI is provided as a free-access resource. Lab information:{' '}
-                        <a
-                            href="https://www.rappsilberlab.org/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-medium text-slate-900 underline decoration-slate-400 underline-offset-2 hover:decoration-slate-900"
-                        >
-                            Rappsilber Lab
-                        </a>
+                        KlinkPPI is free to use without registration or login. The software is released under the{' '}
+                        <Link to="/license" className="font-medium text-slate-900 underline decoration-slate-400 underline-offset-2">MIT License</Link>;
+                        source data keep the licences of their original databases. No cookies, no tracking, and results are private to their link
+                        (<Link to="/privacy" className="font-medium text-slate-900 underline decoration-slate-400 underline-offset-2">privacy</Link>).
+                    </p>
+                    <p className="footer-links">
+                        <Link to="/tutorial">Tutorial</Link> · <Link to="/help">Help</Link> · <Link to="/web-services">Web services &amp; Python API</Link> · <Link to="/license">License</Link> · <Link to="/privacy">Privacy</Link> ·{' '}
+                        <a href="https://www.rappsilberlab.org/" target="_blank" rel="noreferrer">Rappsilber Lab</a>
                     </p>
                 </div>
             </footer>
