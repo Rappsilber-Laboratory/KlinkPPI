@@ -40,7 +40,7 @@ DEFAULT_BASE_URL = "http://127.0.0.1:8000"
 BASE_URL = os.environ.get("KLINKPPI_API_URL", DEFAULT_BASE_URL).rstrip("/")
 TIMEOUT = 120
 EXAMPLE_PROTEIN = "P04637"  # TP53, human
-EXAMPLE_IDS = ["P04217", "P00751", "P56211", "P53539", "P00790", "Q02241", "P30556", "P04181", "P11241", "Q9Y265"]
+EXAMPLE_IDS = ["P38398", "Q99728", "Q86YC2", "P51587", "Q06609", "O15315", "O43502", "O75771", "O43543", "O43542", "Q9BXW9", "Q9NVI1", "O15360", "Q14565"]  # human DNA-repair module
 EXAMPLE_DATABASES = ["String", "IntAct", "BioGrid", "Corum", "Reactome", "Signor"]
 
 

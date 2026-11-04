@@ -1,5 +1,6 @@
 import { API, useLimits } from '../lib/routing'
 import Link from '../components/Link'
+import { GITHUB_URL } from '../lib/site'
 import { PageShell, Toc } from './PageShell'
 
 const GROUPS = [
@@ -58,6 +59,7 @@ export default function WebServicesPage() {
             <p className="doc-actions">
                 <a className="doc-button" href={`${API}/downloads/klinkppi_template.py`} download>Download klinkppi_template.py</a>
                 <a className="doc-button secondary" href={`${API}/downloads/klinkppi.py`} download>Download the full client library (klinkppi.py)</a>
+                <a className="doc-button secondary" href={GITHUB_URL} target="_blank" rel="noreferrer">More examples on GitHub ↗</a>
             </p>
             <pre>{`pip install requests
 python klinkppi_template.py                     # all steps with the example data

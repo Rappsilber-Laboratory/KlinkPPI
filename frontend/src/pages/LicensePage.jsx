@@ -1,4 +1,5 @@
 import { PageShell } from './PageShell'
+import { GITHUB_URL } from '../lib/site'
 
 // Verify each source's current terms before publication; links point to the
 // sources' own licence / terms pages.
@@ -22,7 +23,7 @@ export default function LicensePage() {
     return <PageShell title="License" lead="KlinkPPI is free and open to all users, including commercial users, without registration.">
         <section>
             <h2>Web server and software</h2>
-            <p>The KlinkPPI web server, its source code, the Python template script and the client library are released under the <strong>MIT License</strong>. You may use, copy, modify and redistribute them, provided the copyright notice is kept.</p>
+            <p>The KlinkPPI web server, its source code, the Python template script and the client library are released under the <strong>MIT License</strong>. You may use, copy, modify and redistribute them, provided the copyright notice is kept. The source code is available on <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>.</p>
             <pre className="doc-license">{`MIT License — Copyright (c) 2026
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this

@@ -34,8 +34,10 @@ KIND = "collection"
 ACTIVE = {"resolving", "running"}
 PRIVATE = {"cancel", "resolver", "client", "accessed_at"}
 EXAMPLE_JOB_ID = "example"
-EXAMPLE_IDENTIFIERS = ["P04217", "P00751", "P56211", "P53539", "P00790", "Q02241", "P30556", "P04181", "P11241", "Q9Y265"]
-EXAMPLE_DATABASES = ["String", "IntAct", "BioGrid", "Corum", "HuRI", "ComplexPortal", "Reactome", "Signor"]
+# Human homologous-recombination / Fanconi anaemia module: BRCA1, BARD1, PALB2, BRCA2,
+# RAD51 and its paralogues (RAD51B/C/D, XRCC2, XRCC3, meiotic DMC1), FANCD2, FANCI, FANCA.
+EXAMPLE_IDENTIFIERS = ["P38398", "Q99728", "Q86YC2", "P51587", "Q06609", "O15315", "O43502", "O75771", "O43543", "O43542", "Q9BXW9", "Q9NVI1", "O15360", "Q14565"]
+EXAMPLE_DATABASES = ["String", "IntAct", "BioGrid", "Corum", "HuRI", "Predictomes", "ComplexPortal", "Reactome", "Signor", "Hippie", "HuMap", "Mint"]
 DEFAULT_RESOLVER = None
 POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("KLINKPPI_COLLECTION_WORKERS", "2")), thread_name_prefix="collection-jobs")
 JOBS = {}

@@ -1,4 +1,5 @@
 import Link from './Link'
+import { GITHUB_URL } from '../lib/site'
 
 // The subtitle is the public tagline; change it here when the final title is chosen.
 export const TAGLINE = 'Analysing Interaction Evidence and Gaps in Protein Sets'
@@ -32,6 +33,7 @@ const Navbar = ({ path = '/' }) => {
           const active = to === '/' ? path === '/' || path.startsWith('/results/') : path.startsWith(to)
           return <Link key={to} to={to} className={`app-nav-link${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>{label}</Link>
         })}
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="app-nav-link">GitHub ↗</a>
       </div>
     </nav>
   )

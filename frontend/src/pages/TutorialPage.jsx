@@ -27,7 +27,7 @@ export default function TutorialPage() {
         <section id="example-outputs">
             <h2>Sample outputs</h2>
             <div className="doc-cards">
-                <Link className="doc-card" to={exampleResult}><strong>Example collection result →</strong><span>10 human proteins, induced network from 8 sources: network, filters, statistics, exports and unknown-pair follow-ups. Always available and read-only.</span></Link>
+                <Link className="doc-card" to={exampleResult}><strong>Example collection result →</strong><span>14 human DNA-repair proteins (BRCA1/2, PALB2, RAD51 and its paralogues, Fanconi anaemia proteins) from all 12 sources: network, filters, statistics, exports and follow-ups of the 21 pairs without evidence. Always available and read-only.</span></Link>
                 <a className="doc-card" href={singleExampleLink()}><strong>Example single search →</strong><span>Human TP53 (P04637) searched live in 8 sources, with the overlap log, per-source evidence and MITAB/Parquet downloads.</span></a>
                 <a className="doc-card" href={`${import.meta.env.BASE_URL}examples/collection_example.txt`} download><strong>Example input file ↓</strong><span>The identifier list used for the example collection, in the accepted file format.</span></a>
             </div>
@@ -60,9 +60,9 @@ export default function TutorialPage() {
         <section id="tutorial-unknown">
             <h2>3. Follow up pairs without evidence</h2>
             <ol>
-                <li>In the example result, scroll to <strong>Pairs with no interaction found</strong>. These are pairs of your proteins that no selected source connects.</li>
+                <li>In the example result, scroll to <strong>Pairs with no interaction found</strong>. These are pairs of your proteins that no selected source connects. Most involve DMC1, the meiosis-specific RAD51 paralogue.</li>
                 <li>Click <strong>Check GO</strong> on a pair to list Gene Ontology terms that both proteins share.</li>
-                <li>Click <strong>Align seqs</strong> for a global alignment with score and percent identity, then expand it to see the residues.</li>
+                <li>Click <strong>Align seqs</strong> for a global alignment with score and percent identity, then expand it to see the residues. Compare RAD51C–DMC1 (paralogues: score 241, 25.6% identity) with BARD1–XRCC3 (score −115).</li>
                 <li>In the <strong>Embedding</strong> column, choose a model (start with <em>esm2-8m</em> for speed) and click <strong>Compute distances</strong>. Expand the scores to read what each metric means, and download them as TSV.</li>
             </ol>
             <p>None of these similarities proves an interaction; use them to rank candidate pairs (<Link to="/help#unknown-pairs">details</Link>).</p>

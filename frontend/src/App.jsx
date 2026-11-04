@@ -6,6 +6,7 @@ import './collection/collection.css'
 import './pages/pages.css'
 import { navigate, usePath } from './lib/routing'
 import Link from './components/Link'
+import { GITHUB_URL } from './lib/site'
 const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
 const PAGES = {
     '/help': lazy(() => import('./pages/HelpPage')),
@@ -211,6 +212,7 @@ function App() {
                     </p>
                     <p className="footer-links">
                         <Link to="/tutorial">Tutorial</Link> · <Link to="/help">Help</Link> · <Link to="/web-services">Web services &amp; Python API</Link> · <Link to="/license">License</Link> · <Link to="/privacy">Privacy</Link> ·{' '}
+                        <a href={GITHUB_URL} target="_blank" rel="noreferrer">Source code on GitHub</a> ·{' '}
                         <a href="https://www.rappsilberlab.org/" target="_blank" rel="noreferrer">Rappsilber Lab</a>
                     </p>
                 </div>

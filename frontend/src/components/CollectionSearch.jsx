@@ -6,7 +6,8 @@ import '../collection/collection.css'
 import { API, resultUrl, useLimits } from '../lib/routing'
 import Link from './Link'
 
-const EXAMPLE_IDENTIFIERS = ['P04217', 'P00751', 'P56211', 'P53539', 'P00790', 'Q02241', 'P30556', 'P04181', 'P11241', 'Q9Y265']
+// Human homologous-recombination / Fanconi anaemia module (same as the server's example result).
+const EXAMPLE_IDENTIFIERS = ['P38398', 'Q99728', 'Q86YC2', 'P51587', 'Q06609', 'O15315', 'O43502', 'O75771', 'O43543', 'O43542', 'Q9BXW9', 'Q9NVI1', 'O15360', 'Q14565']
 const EXAMPLE_FILE = `${import.meta.env.BASE_URL}examples/collection_example.txt`
 async function request(path, options = {}) {
     const response = await fetch(`${API}${path}`, options)
@@ -131,6 +132,8 @@ export default function CollectionSearch({ initialJobId = null, onJobChange = ()
             selectSpecies(human)
             setIdentifiers(EXAMPLE_IDENTIFIERS.join('\n'))
             setInputType('UniProtKB')
+            setMode('induced')
+            setDatabases(DATABASES.filter(db => (human.supported_databases || DATABASES).includes(db)))
         } catch (err) { setError(err.message) }
         finally { setPending(false) }
     }
