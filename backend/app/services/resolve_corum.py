@@ -85,3 +85,30 @@ def resolve_corum(input_id: str, tax_id: str):
 
     interactions.append({"Interactors": interactors_list})
     return interactions
+
+
+def resolve_corum_collection(input_id: str, tax_id: str):
+    """All complexes for a collection input, retaining per-complex evidence."""
+    complex_ids = set(CORUM_MAPPING_DF.loc[
+        CORUM_MAPPING_DF["UniProtKB_accession_number"] == input_id, "corum_id"
+    ])
+    rows = CORUM_COMPLEXES_DF.loc[CORUM_COMPLEXES_DF["complex_id"].isin(complex_ids)]
+    interactors = []
+    for _, complex_row in rows.iterrows():
+        methods = [_clean_value(method.get("name")) for method in complex_row["purification_methods"] if method.get("name")]
+        pubmed = _clean_value(complex_row["pmid"])
+        for subunit in complex_row["subunits"]:
+            swissprot = subunit.get("swissprot") or {}
+            partner = _clean_value(swissprot.get("uniprot_id"))
+            if not partner or partner == input_id:
+                continue
+            interactors.append({
+                "Interactor_A": partner, "Interactor_B": input_id,
+                "Interactor_Gene_Name": _clean_value(swissprot.get("gene_name")),
+                "Interaction_Type": "CORUM complex co-membership",
+                "Interaction_Detection_Method": methods,
+                "PubMed_Ids": [str(pubmed)] if pubmed else [],
+                "Complex_ID": str(complex_row["complex_id"]),
+                "Interactor_Link": f"https://mips.helmholtz-muenchen.de/corum/?query={complex_row['complex_id']}",
+            })
+    return [{"info": {"database": "CORUM", "Input_UniProt": input_id, "organism_tax_id": tax_id}}, {"Interactors": interactors}]

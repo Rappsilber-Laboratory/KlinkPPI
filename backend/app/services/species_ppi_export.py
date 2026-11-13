@@ -22,6 +22,7 @@ from app.services.populate_mitab import (
     _score_values,
 )
 from app.services.species_ppi_remote import iter_intact_species_rows, iter_string_species_rows
+from app.services.resolve_humap import iter_humap_species_rows
 
 
 ALL_SPECIES_EXPORT_COLUMNS = [
@@ -36,6 +37,12 @@ ALL_SPECIES_EXPORT_COLUMNS = [
     "Purification_Method",
     "complex_name",
     "cell_line",
+    "Effect",
+    "Mechanism",
+    "Source_Count",
+    "Experiment_Count",
+    "complex_id",
+    "Evidence_Class",
 ]
 
 RAW_PARQUET_COLUMNS_BY_DB = {
@@ -111,6 +118,16 @@ RAW_PARQUET_COLUMNS_BY_DB = {
         "Interactor_A_Ensembl",
         "Interactor_B_Ensembl",
     ],
+    "ComplexPortal": [
+        "Database", "Interactor_A", "Interactor_B", "Taxid_A", "Taxid_B",
+        "complex_id", "complex_name", "Interaction_Type", "Evidence_Class",
+        "Stoichiometry_A", "Stoichiometry_B", "Evidence_Code", "Experimental_Evidence",
+        "PubMed_Ids", "Source_Database",
+    ],
+    "HuMap": [
+        "Database", "Interactor_A", "Interactor_B", "Taxid_A", "Taxid_B",
+        "Confidence_Score", "Interaction_Type", "Evidence_Class",
+    ],
 }
 
 
@@ -136,6 +153,9 @@ def _iter_species_rows(db_name: str, db_data) -> Iterator[dict]:
             return
         if db_data.get("kind") == "intact_species_bundle":
             yield from iter_intact_species_rows(db_data)
+            return
+        if db_data.get("kind") == "humap_sqlite_bundle":
+            yield from iter_humap_species_rows(db_data)
             return
 
     for row in db_data or []:
@@ -255,6 +275,26 @@ def iter_species_mitab_rows(
             row["Alias(es) interactor B"] = _gene_alias(interaction.get("Interactor_Gene_Name_B"))
             row["Interaction type(s)"] = 'psi-mi:"MI:0407"(direct interaction)'
             row["Source database(s)"] = "huri"
+
+        elif db_name == "ComplexPortal":
+            row = _base_row(final_columns, tax_id, interaction.get("Taxid_A"), interaction.get("Taxid_B"))
+            row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
+            row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+            row["Interaction type(s)"] = "complex-portal-complex-co-membership"
+            row["Publication Identifier(s)"] = _pubmed_values(interaction.get("PubMed_Ids"))
+            row["Source database(s)"] = "complex portal"
+            row["Confidence value(s)"] = _join([
+                f"complex-portal-complex-id:{interaction.get('complex_id')}" if interaction.get("complex_id") else None,
+                f"complex-portal-evidence-code:{interaction.get('Evidence_Code')}" if interaction.get("Evidence_Code") else None,
+            ])
+
+        elif db_name == "HuMap":
+            row = _base_row(final_columns, tax_id, interaction.get("Taxid_A"), interaction.get("Taxid_B"))
+            row["#ID(s) interactor A"] = f"uniprotkb:{interaction.get('Interactor_A', '-')}"
+            row["ID(s) interactor B"] = f"uniprotkb:{interaction.get('Interactor_B', '-')}"
+            row["Interaction type(s)"] = "humap3-ml-predicted-interaction"
+            row["Source database(s)"] = "humap3"
+            row["Confidence value(s)"] = f"humap3-probability:{interaction.get('Confidence_Score')}"
 
         yield row
 

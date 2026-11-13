@@ -1,6 +1,6 @@
-import DBHeader from './DBHeader'
 import DBTable from './DBTable'
 import MetadataCard from './MetaDataCard'
+import DatabaseResultCard from './DatabaseResultCard'
 
 const CorumResults = ({ data }) => {
     const info = data.Corum[0].info
@@ -25,8 +25,7 @@ const CorumResults = ({ data }) => {
     ))
 
     return (
-        <div className="bg-white  shadow-md mb-8 overflow-hidden">
-            <DBHeader name="CORUM" subtitle="Curated mammalian protein complex database" count={Interactions.length} color="bg-amber-700" databaseLink={info.Database_Link} />
+        <DatabaseResultCard name="CORUM" subtitle="Curated mammalian protein complex database" count={Interactions.length} color="bg-amber-700" databaseLink={info.Database_Link}>
             <MetadataCard fields={[
                 { label: 'Complex Name', value: info.complex_name },
                 { label: 'Cell Line', value: info.cell_line },
@@ -40,8 +39,8 @@ const CorumResults = ({ data }) => {
             No interactions found in Corum.
         </div>
     )}
-</div>
-        </div>
+            </div>
+        </DatabaseResultCard>
     )
 }
 

@@ -1,14 +1,26 @@
 import io
-from typing import List, Optional
-from fastapi import FastAPI,HTTPException, Query
-from fastapi.responses import StreamingResponse
+import logging
+import os
+import re
+import threading
+from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import List, Literal, Optional
+from fastapi import FastAPI,HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from app.services.convert_input_to_uniprotKB import get_job_id
 from app.services.resolve_string import get_string_interactions
 from app.services.resolve_intact import resolve_intact
 from app.services.resolve_predictomes import resolve_predictomes
 from app.services.resolve_biogrid import resolve_biogrid
-from app.services.resolve_corum import resolve_corum
+from app.services.resolve_corum import resolve_corum, resolve_corum_collection
 from app.services.resolve_huri import resolve_HuRI
+from app.services.resolve_complex_portal import resolve_complex_portal
+from app.services.resolve_hippie import resolve_hippie
+from app.services.resolve_humap import resolve_humap
+from app.services.resolve_psicquic import resolve_mint, resolve_reactome
+from app.services.resolve_signor import resolve_signor
 from app.services.convert_input_to_ensembl import convert_to_ensemble
 from app.services.species_index import get_species_by_tax_id, get_supported_databases, get_supported_organism_summary, resolve_species_name, search_species
 from app.services.species_ppi_export import build_species_mitab, build_species_parquet
@@ -21,10 +33,17 @@ from app.services.select_columns_mitab import build_final_columns
 from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
-from pydantic import BaseModel,EmailStr
+from pydantic import BaseModel,EmailStr,Field
+from app.services import collection_search, collection_go, collection_alignment, collection_analysis, collection_embeddings
+from app.services.job_store import get_store, retention_seconds
+from app.services.rate_limit import RateLimiter
 
 
 from fastapi.middleware.cors import CORSMiddleware
+
+LOGGER = logging.getLogger("klinkppi")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APP_VERSION = "1.0.0"
 
 
 class AuthCredentials(BaseModel):
@@ -42,14 +61,113 @@ class SpeciesPPIDownloadRequest(BaseModel):
     selected_databases: list[str]
     selected_columns: list[str]
 
-app=FastAPI() 
+def _flag(name, default="1"):
+    return os.environ.get(name, default).strip().lower() not in {"0", "off", "false", "no"}
+
+
+def _start_example_build():
+    """Build the permanent tutorial example in the background (needs internet)."""
+    def build():
+        try:
+            species = get_species_by_tax_id("9606")
+            available = set(get_supported_databases("9606"))
+            databases = [db for db in collection_search.EXAMPLE_DATABASES if db in available]
+            job = collection_search.ensure_example(resolve_collection_database, species["display_name"], databases=databases)
+            LOGGER.info("Example collection result: %s", job.get("status"))
+        except Exception:
+            LOGGER.exception("Could not build the example collection result")
+    threading.Thread(target=build, name="klinkppi-example", daemon=True).start()
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    collection_search.configure(resolve_collection_database)
+    resumed = collection_search.recover()
+    if resumed:
+        LOGGER.info("Resumed %d unfinished collection jobs", resumed)
+    if _flag("KLINKPPI_BUILD_EXAMPLE"):
+        _start_example_build()
+    yield
+
+
+# Interactive Swagger/ReDoc pages load scripts from a third-party CDN, so they
+# are disabled; the in-app "Web services" page and /openapi.json document the API.
+app=FastAPI(title="KlinkPPI API", version=APP_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+_extra_origins = [origin.strip() for origin in os.environ.get("KLINKPPI_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5174","http://127.0.0.1:5174"],
+    allow_origins=["http://localhost:5174","http://127.0.0.1:5174", *_extra_origins],
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_methods=["*"],
     allow_headers=["*"],
 )
+RATE_LIMITER = RateLimiter()
+
+
+def client_id(request: Optional[Request]) -> Optional[str]:
+    """Client address used only in memory for fair-use limits; never stored."""
+    if request is None or request.client is None:
+        return None
+    return request.client.host
+
+
+@app.middleware("http")
+async def fair_use_limits(request: Request, call_next):
+    # When mounted under /api (app.server), match rules against the API-relative path.
+    path, root = request.url.path, request.scope.get("root_path", "")
+    if root and path.startswith(root):
+        path = path[len(root):] or "/"
+    allowed, retry_after, bucket = RATE_LIMITER.check(client_id(request) or "unknown", request.method, path)
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+            content={"detail": f"Too many {bucket} requests from your address. Please retry in {retry_after} seconds."},
+        )
+    return await call_next(request)
+
+
+DATABASE_RESOLVERS = {
+    "String": get_string_interactions,
+    "IntAct": resolve_intact,
+    "Corum": resolve_corum,
+    "Predictomes": resolve_predictomes,
+    "BioGrid": resolve_biogrid,
+    "ComplexPortal": resolve_complex_portal,
+    "Reactome": resolve_reactome,
+    "Signor": resolve_signor,
+    "Hippie": resolve_hippie,
+    "HuMap": resolve_humap,
+    "Mint": resolve_mint,
+}
+
+
+def resolve_database(database_name: str, uniprotkb_id: str, tax_id: str):
+    if database_name == "HuRI":
+        ensembl_id = convert_to_ensemble(uniprotkb_id)
+        return resolve_HuRI(ensembl_id, tax_id, uniprotkb_id)
+
+    resolver = DATABASE_RESOLVERS.get(database_name)
+    if resolver is None:
+        raise KeyError(f"Unknown database: {database_name}")
+    return resolver(uniprotkb_id, tax_id)
+
+
+def resolve_database_safely(database_name: str, uniprotkb_id: str, tax_id: str):
+    try:
+        return resolve_database(database_name, uniprotkb_id, tax_id)
+    except Exception as exc:
+        return [
+            {
+                "info": {
+                    "database": database_name,
+                    "Input_UniProt": uniprotkb_id,
+                    "organism_tax_id": tax_id,
+                    "Error": f"{database_name} lookup failed: {exc}",
+                }
+            },
+            {"Interactors": []},
+        ]
 
 
 def resolve_species_context(tax_id: Optional[str], species_name: Optional[str]):
@@ -73,9 +191,75 @@ def resolve_species_context(tax_id: Optional[str], species_name: Optional[str]):
     return resolved_tax_id, requested_species_name, resolved_species
 
 
+DATA_FILES = {
+    "BioGrid": PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.sqlite3",
+    "Corum": PROJECT_ROOT / "Data" / "Corum" / "corum_allComplexes.json",
+    "HuRI": PROJECT_ROOT / "Data" / "HuRI" / "HuRI_uniprot.tsv",
+    "Predictomes": PROJECT_ROOT / "Data" / "Predictomes" / "Predictomes.csv",
+    "HuMap": PROJECT_ROOT / "Data" / "HuMap" / "humap3.sqlite3",
+}
+
+
+def data_readiness():
+    sources = {name: path.exists() and path.stat().st_size > 0 for name, path in DATA_FILES.items()}
+    try:
+        import plms_framework  # noqa: F401
+        embeddings = True
+    except Exception:
+        embeddings = False
+    example = get_store().load("collection", collection_search.EXAMPLE_JOB_ID)
+    return {"local_sources": sources, "embedding_backend": embeddings,
+            "example_result": example.get("status") if example else "missing"}
+
+
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+def health(details: bool = False):
+    if not details:
+        return {"status": "ok"}
+    readiness = data_readiness()
+    ready = all(readiness["local_sources"].values()) and readiness["embedding_backend"] and readiness["example_result"] == "completed"
+    return {"status": "ok" if ready else "degraded", "version": APP_VERSION, **readiness}
+
+
+@app.get("/limits")
+def service_limits():
+    """Input limits, result retention and fair-use limits shown in the help pages."""
+    return {
+        "version": APP_VERSION,
+        "collection_max_identifiers": collection_search.MAX_INPUTS,
+        "collection_max_edges": collection_search.MAX_EDGES,
+        "result_retention_days": round(retention_seconds() / 86400, 2),
+        "max_active_collection_jobs": collection_search.MAX_ACTIVE_JOBS,
+        "max_active_collection_jobs_per_client": collection_search.MAX_ACTIVE_PER_CLIENT,
+        "max_queued_embeddings": collection_embeddings.MAX_TASKS,
+        "max_queued_embeddings_per_client": collection_embeddings.MAX_TASKS_PER_CLIENT,
+        "max_models_per_embedding": collection_embeddings.MAX_MODELS_PER_REQUEST,
+        "embedding_models": list(collection_embeddings.ENABLED_MODELS),
+        "rate_limits_enabled": RATE_LIMITER.enabled,
+        "rate_limits": RATE_LIMITER.describe(),
+        "example_job_id": collection_search.EXAMPLE_JOB_ID,
+    }
+
+
+# Template scripts are offered for download with this server's API URL filled in.
+DOWNLOADS = {
+    "klinkppi_template.py": PROJECT_ROOT / "klinkppi_template.py",
+    "klinkppi.py": PROJECT_ROOT / "klinkppi.py",
+}
+_BASE_URL_LINE = re.compile(r'^(DEFAULT_BASE_URL = )"[^"]*"', re.M)
+
+
+@app.get("/downloads/{name}")
+def download_script(name: str, request: Request):
+    path = DOWNLOADS.get(name)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Download not found")
+    text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    # url_for includes the mount prefix (/api) when served through app.server.
+    public_url = os.environ.get("KLINKPPI_PUBLIC_API_URL") or str(request.url_for("health")).removesuffix("/health")
+    text = _BASE_URL_LINE.sub(lambda match: f'{match.group(1)}"{public_url}"', text, count=1)
+    return Response(text, media_type="text/x-python; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={name}"})
 
 
 @app.get("/species/search")
@@ -268,41 +452,28 @@ def search(
         }
     })
     output=[]
-    if(selected_databases is None):
-        for db in available_databases:
-            if(db=="String"):
-                selected_databases_dict["String"]=get_string_interactions(uniprotkb_id,resolved_tax_id)
-            if(db=="IntAct"):
-                selected_databases_dict["IntAct"]=resolve_intact(uniprotkb_id,resolved_tax_id)
-            if(db=="Corum"):
-                selected_databases_dict["Corum"]=resolve_corum(uniprotkb_id,resolved_tax_id)
-            if(db=="Predictomes"):
-                selected_databases_dict["Predictomes"]=resolve_predictomes(uniprotkb_id,resolved_tax_id)
-            if(db=="BioGrid"):
-                selected_databases_dict["BioGrid"]=resolve_biogrid(uniprotkb_id,resolved_tax_id)
-            if(db=="HuRI"):
-                ensembl_id=convert_to_ensemble(uniprotkb_id)
-                selected_databases_dict["HuRI"]=resolve_HuRI(ensembl_id,resolved_tax_id,uniprotkb_id)
-    else:
-        for db in selected_databases:
-            if(db in available_databases):
-                if(db=="String"):
-                    selected_databases_dict["String"]=get_string_interactions(uniprotkb_id,resolved_tax_id)
-                if(db=="IntAct"):
-                    selected_databases_dict["IntAct"]=resolve_intact(uniprotkb_id,resolved_tax_id)
-                if(db=="Corum"):
-                    selected_databases_dict["Corum"]=resolve_corum(uniprotkb_id,resolved_tax_id)
-                if(db=="Predictomes"):
-                    selected_databases_dict["Predictomes"]=resolve_predictomes(uniprotkb_id,resolved_tax_id)
-                if(db=="BioGrid"):
-                    selected_databases_dict["BioGrid"]=resolve_biogrid(uniprotkb_id,resolved_tax_id)
-                if(db=="HuRI"):
-                    ensembl_id=convert_to_ensemble(uniprotkb_id)
-                    selected_databases_dict["HuRI"]=resolve_HuRI(ensembl_id,resolved_tax_id,uniprotkb_id)
-            else:
-                output.append({db:f"{db} does not have interactions for the given Input_id"})
+    requested_databases = sorted(available_databases) if selected_databases is None else selected_databases
+    supported_requests = []
+    for db in requested_databases:
+        if db not in available_databases:
+            output.append({db: f"{db} does not support taxonomy ID {resolved_tax_id}"})
+        elif db not in DATABASE_RESOLVERS and db != "HuRI":
+            output.append({db: f"{db} is not configured"})
+        else:
+            supported_requests.append(db)
+
+    if supported_requests:
+        worker_count = min(12, len(supported_requests))
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="klinkppi-search") as executor:
+            futures = {
+                executor.submit(resolve_database_safely, db, uniprotkb_id, resolved_tax_id): db
+                for db in supported_requests
+            }
+            for future in as_completed(futures):
+                db = futures[future]
+                selected_databases_dict[db] = future.result()
     
-    for key in selected_databases_dict.keys():
+    for key in supported_requests:
         if(key in available_databases):
             output.append({key:selected_databases_dict[key]})
 
@@ -378,3 +549,198 @@ def download_parquet(request: DownloadRequest):
             f"attachment; filename={request.uniprot_id}.parquet"
         }
     )
+
+
+# Collection searches retain candidate lists on the server so clients cannot
+# introduce unvalidated accessions or silently choose ambiguous mappings.
+def resolve_collection_database(database_name: str, uniprotkb_id: str, tax_id: str):
+    if database_name == "Corum":
+        return resolve_corum_collection(uniprotkb_id, tax_id)
+    return resolve_database_safely(database_name, uniprotkb_id, tax_id)
+
+
+class CollectionRequest(BaseModel):
+    identifiers: list[str] = Field(min_length=1, description=f"Up to {collection_search.MAX_INPUTS} distinct gene/protein identifiers after trimming and duplicate merging.")
+    species_name: str = Field(min_length=1, max_length=200)
+    tax_id: Optional[str] = None
+    selected_databases: list[str] = Field(min_length=1, max_length=12)
+    input_type: Literal["auto", "UniProtKB", "Gene_Name", "Ensembl", "GeneID"] = "auto"
+    mode: Literal["induced", "expanded"] = "induced"
+
+
+class CollectionChoices(BaseModel):
+    choices: dict[str, Optional[str]] = Field(default_factory=dict)
+
+
+@app.post("/collection/jobs", status_code=202)
+def start_collection(request: CollectionRequest, http_request: Request = None):
+    tax_id, _, species = resolve_species_context(request.tax_id, request.species_name)
+    if not tax_id or not species:
+        raise HTTPException(status_code=400, detail="Select a supported species before collection search")
+    limit = collection_search.MAX_INPUTS
+    identifiers = list(dict.fromkeys(token.strip() for token in request.identifiers if token.strip()))
+    if len(identifiers) > limit:
+        raise HTTPException(status_code=400, detail=f"Use up to {limit} distinct identifiers per collection; duplicates are merged.")
+    if not identifiers or any(len(token) > 100 for token in identifiers):
+        raise HTTPException(status_code=400, detail=f"Provide 1–{limit} distinct identifiers, each at most 100 characters")
+    supported = get_supported_databases(tax_id)
+    databases = list(dict.fromkeys(request.selected_databases))
+    invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Databases unavailable for this species: {', '.join(invalid)}")
+    try:
+        return collection_search.create_job(identifiers, tax_id, species["display_name"], databases,
+                                            request.input_type, request.mode, resolve_collection_database,
+                                            client=client_id(http_request))
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}")
+def collection_status(job_id: str):
+    try:
+        return collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+
+
+@app.post("/collection/jobs/{job_id}/run", status_code=202)
+def run_collection(job_id: str, request: CollectionChoices):
+    try:
+        return collection_search.run_job(job_id, request.choices)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/collection/jobs/{job_id}/rerun", status_code=202)
+def rerun_collection(job_id: str):
+    try:
+        return collection_search.rerun_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/collection/jobs/{job_id}/cancel")
+def cancel_collection(job_id: str):
+    try:
+        return collection_search.cancel_job(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/analysis")
+def collection_network_analysis(
+    job_id: str,
+    databases: Optional[List[str]] = Query(default=None),
+    evidence_type: Literal["all", "direct", "functional", "predicted"] = "all",
+    method: str = "",
+    score_database: str = "",
+    min_score: Optional[float] = Query(default=None, allow_inf_nan=False),
+    min_publications: int = Query(default=0, ge=0),
+):
+    # Omitted databases means every searched source; an empty value means none.
+    selected = None if databases is None else [db for db in databases if db]
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_analysis.analyze(job, selected, evidence_type, method, score_database, min_score, min_publications)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/shared-go")
+def collection_shared_go(job_id: str, source: str = Query(min_length=1, max_length=100), target: str = Query(min_length=1, max_length=100)):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_go.shared_go(job, source, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except collection_go.GOLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/sequence")
+def collection_sequence(job_id: str, accession: str = Query(min_length=1, max_length=100)):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_alignment.collection_sequence(job, accession)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except collection_alignment.SequenceLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
+class PairAlignmentRequest(BaseModel):
+    source: str = Field(min_length=1, max_length=100)
+    target: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/collection/jobs/{job_id}/alignments", status_code=202)
+def start_pair_alignment(job_id: str, request: PairAlignmentRequest, http_request: Request = None):
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_alignment.start(job, request.source, request.target, client=client_id(http_request))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/alignments/{alignment_id}")
+def pair_alignment_status(job_id: str, alignment_id: str):
+    try:
+        return collection_alignment.snapshot(alignment_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Alignment not found or expired")
+
+
+class PairEmbeddingRequest(PairAlignmentRequest):
+    models: list[str] = Field(default_factory=lambda: ["esm2-8m"], min_length=1, max_length=12)
+
+
+@app.get("/collection/embedding-models")
+def collection_embedding_models():
+    """Supported models from embedding_FW/examples/test_two_seqs_mem.py and score meanings."""
+    return collection_embeddings.catalog()
+
+
+@app.post("/collection/jobs/{job_id}/embeddings", status_code=202)
+def start_pair_embedding(job_id: str, request: PairEmbeddingRequest, http_request: Request = None):
+    """Queue distances for selected ESM-2, ESM-1b, ESM-1v or ESM-C models."""
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        return collection_embeddings.start(job, request.source, request.target, request.models,
+                                           client=client_id(http_request))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/embeddings/{embedding_id}")
+def pair_embedding_status(job_id: str, embedding_id: str):
+    """Poll progress, runtime and completed scores with explanations."""
+    try:
+        return collection_embeddings.snapshot(embedding_id, job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Embedding comparison not found or expired")

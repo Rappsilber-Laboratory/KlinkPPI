@@ -1,5 +1,5 @@
-import DBHeader from './DBHeader'
 import DBTable from './DBTable'
+import DatabaseResultCard from './DatabaseResultCard'
 
 const IntActResults = ({ data }) => {
     const info = data.IntAct[0].info
@@ -36,8 +36,7 @@ const IntActResults = ({ data }) => {
     ))
 
     return (
-        <div className="bg-white  shadow-md mb-8 overflow-hidden">
-            <DBHeader name="IntAct" subtitle="Experimentally verified molecular interactions" count={Interactions.length} color="bg-fuchsia-700" databaseLink={info.Database_Link} />
+        <DatabaseResultCard name="IntAct" subtitle="Experimentally verified molecular interactions" count={Interactions.length} color="bg-fuchsia-700" databaseLink={info.Database_Link}>
             <div className="p-6">
     {Interactions.length > 0 ? (
         <DBTable headers={headers} rows={rows} />
@@ -46,8 +45,8 @@ const IntActResults = ({ data }) => {
             No interactions found in IntAct.
         </div>
     )}
-</div>
-        </div>
+            </div>
+        </DatabaseResultCard>
     )
 }
 

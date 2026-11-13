@@ -1,0 +1,54 @@
+/* Documentation pages (help, tutorial, web services, license, privacy) and shared chrome. */
+.doc-page { width: 100%; padding: clamp(1.25rem, 3vw, 3rem) clamp(1rem, 3vw, 2.5rem) 4rem; max-width: 64rem; line-height: 1.6; color: #1e2b26; }
+.doc-header h1 { font-size: clamp(1.8rem, 3vw, 2.4rem); font-weight: 700; letter-spacing: -.02em; color: var(--app-navy, #12304d); }
+.doc-lead { font-size: 1.1rem; color: #475569; margin-top: .4rem; }
+.doc-page section { margin-top: 2.25rem; scroll-margin-top: 1rem; }
+.doc-page h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: .6rem; color: #12304d; border-bottom: 1px solid #dbe3eb; padding-bottom: .3rem; }
+.doc-page h3 { font-size: 1.08rem; font-weight: 650; margin: 1.2rem 0 .4rem; }
+.doc-page p, .doc-page ul, .doc-page ol, .doc-page dl { margin: .5rem 0; }
+.doc-page ul { list-style: disc; padding-left: 1.4rem; }
+.doc-page ol { list-style: decimal; padding-left: 1.4rem; }
+.doc-page li { margin: .3rem 0; }
+.doc-page a { color: #0f766e; text-decoration: underline; text-underline-offset: 2px; }
+.doc-page code, .doc-page pre, .doc-page pre * { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; }
+.doc-page code { background: #eef2f1; padding: .05rem .3rem; border-radius: .25rem; overflow-wrap: anywhere; }
+.doc-page pre { background: #0f1f1a; color: #e2f5ee; padding: 1rem; border-radius: .6rem; overflow-x: auto; margin: .75rem 0; line-height: 1.5; }
+.doc-page table { width: 100%; border-collapse: collapse; margin: .75rem 0; font-size: .92rem; background: white; }
+.doc-page th, .doc-page td { border: 1px solid #dbe3eb; padding: .45rem .6rem; text-align: left; vertical-align: top; }
+.doc-page th { background: #f1f5f4; font-weight: 650; }
+.doc-page dt { font-weight: 650; margin-top: .75rem; }
+.doc-page dd { margin-left: 1rem; color: #334155; }
+.doc-toc { background: white; border: 1px solid #dbe3eb; border-radius: .8rem; padding: 1rem 1.25rem; margin-top: 1.5rem; }
+.doc-toc ol { columns: 2 16rem; margin: .4rem 0 0; }
+.doc-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; margin-top: 1rem; }
+.doc-page .doc-card { display: flex; flex-direction: column; gap: .4rem; padding: 1rem 1.1rem; border: 1px solid #cfe3dc; border-radius: .8rem; background: white; text-decoration: none; color: inherit; box-shadow: 0 6px 20px #0f172a08; }
+.doc-page .doc-card strong { color: #0f766e; }
+.doc-page .doc-card span { font-size: .92rem; color: #475569; }
+.doc-page .doc-card:hover { border-color: #0f766e; }
+.doc-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.doc-page .doc-button { display: inline-block; padding: .6rem 1rem; border-radius: .55rem; background: #0f766e; color: white; text-decoration: none; font-weight: 600; }
+.doc-page .doc-button.secondary { background: white; color: #0f766e; border: 1px solid #0f766e; }
+.doc-endpoints td:first-child { width: 5rem; }
+.doc-endpoints td:nth-child(2) { width: 40%; }
+.doc-method { display: inline-block; font-size: .75rem; font-weight: 700; padding: .1rem .45rem; border-radius: .3rem; color: white; background: #2563eb; }
+.doc-method.post { background: #c2410c; }
+.doc-license { white-space: pre-wrap; }
+
+/* Navigation, home intro, footer */
+.app-title-link { color: inherit; text-decoration: none; }
+.app-nav-links { font-size: .92rem; }
+.app-nav-link { padding: .35rem .75rem; border-radius: 999px; color: #334155; text-decoration: none; font-weight: 550; }
+.app-nav-link:hover { background: #e6efec; }
+.app-nav-link.active { background: #12304d; color: white; }
+.footer-links a { text-decoration: underline; text-underline-offset: 2px; }
+.single-example-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1rem; border: 1px dashed #9ec9bd; border-radius: .75rem; background: #f3faf7; }
+.single-example-button { padding: .5rem 1rem; border-radius: .5rem; background: #0f766e; color: white; font-weight: 600; }
+.single-example-button:hover { background: #115e59; }
+
+/* Collection result link */
+.result-link { width: 100%; background: #f0fdf9; border: 1px solid #99d8c6; border-radius: clamp(.7rem,1.2vw,1.25rem); padding: 1rem 1.25rem; margin-bottom: clamp(1rem,1.5vw,1.5rem); }
+.result-link p { margin: .3rem 0 .6rem; color: #334155; font-size: .92rem; }
+.result-link-row { display: flex; gap: .5rem; }
+.result-link-row input { flex: 1; min-width: 0; font-family: ui-monospace, Menlo, monospace; font-size: .85rem; padding: .45rem .6rem; border: 1px solid #cbd5e1; border-radius: .5rem; background: white; }
+.collection-shell .collection-link-button { display: inline-flex; align-items: center; border: 1px solid #0f766e; border-radius: .55rem; padding: .55rem .9rem; font-size: .85rem; font-weight: 600; color: #0f766e; text-decoration: none; background: white; }
+@media (max-width: 640px) { .result-link-row { flex-direction: column; } .doc-toc ol { columns: 1; } }

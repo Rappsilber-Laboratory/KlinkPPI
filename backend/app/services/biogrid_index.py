@@ -9,7 +9,7 @@ import threading
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 BIOGRID_SOURCE_PATH = PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.mitab.txt"
 BIOGRID_INDEX_PATH = PROJECT_ROOT / "Data" / "BioGrid" / "BIOGRID-ALL-5.0.258.sqlite3"
-BIOGRID_INDEX_SCHEMA_VERSION = "3"
+BIOGRID_INDEX_SCHEMA_VERSION = "4"
 
 _INDEX_BUILD_LOCK = threading.Lock()
 
@@ -101,7 +101,8 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             interaction_detection_method TEXT NOT NULL,
             interaction_type TEXT NOT NULL,
             confidence_score TEXT NOT NULL,
-            interactor_biogrid_id TEXT NOT NULL
+            interactor_biogrid_id TEXT NOT NULL,
+            publication_identifiers TEXT NOT NULL
         );
 
         CREATE TABLE metadata (
@@ -126,8 +127,9 @@ def _flush_batch(connection: sqlite3.Connection, batch: list[tuple[str, ...]]) -
             interaction_detection_method,
             interaction_type,
             confidence_score,
-            interactor_biogrid_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            interactor_biogrid_id,
+            publication_identifiers
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         batch,
     )
@@ -181,6 +183,7 @@ def build_biogrid_index() -> None:
                 )
                 interaction_type = _extract_interaction_type(row["Interaction Types"])
                 confidence_score = _extract_confidence_score(row["Confidence Values"])
+                publications = row.get("Publication Identifiers", "")
                 gene_name_a = _extract_gene_name(
                     row["Alt IDs Interactor A"], row["Aliases Interactor A"]
                 )
@@ -199,6 +202,7 @@ def build_biogrid_index() -> None:
                         interaction_type,
                         confidence_score,
                         biogrid_id_b,
+                        publications,
                     )
                 )
                 batch.append(
@@ -212,6 +216,7 @@ def build_biogrid_index() -> None:
                         interaction_type,
                         confidence_score,
                         biogrid_id_a,
+                        publications,
                     )
                 )
 
@@ -264,7 +269,8 @@ def get_biogrid_interactions(input_id: str) -> list[dict]:
                 interaction_detection_method,
                 interaction_type,
                 confidence_score,
-                interactor_biogrid_id
+                interactor_biogrid_id,
+                publication_identifiers
             FROM interactions
             WHERE query_uniprot = ?
             """,
@@ -284,6 +290,7 @@ def get_biogrid_interactions(input_id: str) -> list[dict]:
                 "Interaction_Detection_Method": row["interaction_detection_method"],
                 "Interaction_Type": row["interaction_type"],
                 "Confidence_Score": row["confidence_score"],
+                "PubMed_Ids": [identifier.split(":", 1)[1] for identifier in row["publication_identifiers"].split("|") if identifier.startswith("pubmed:")],
                 "Interactor_Link": f"https://thebiogrid.org/{row['interactor_biogrid_id']}/table.html",
             }
         )

@@ -1,7 +1,21 @@
 import React, { useEffect, useState } from 'react'
 import SpeciesDownloadPanel from './SpeciesDownloadPanel'
+import Link from './Link'
+import { SINGLE_EXAMPLE } from '../lib/examples'
+
+const INPUT_TYPES = ['UniProtKB', 'GeneID', 'Ensembl', 'Gene_Name']
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL.replace(/\/+$/, '')}/api`
+
+const EXTENDED_DATABASES = [
+    ['ComplexPortal', 'Complex Portal'],
+    ['Reactome', 'Reactome'],
+    ['Signor', 'SIGNOR'],
+    ['Hippie', 'HIPPIE'],
+    ['HuMap', 'hu.MAP 3.0'],
+    ['Mint', 'MINT'],
+]
+const ALL_DATABASES = ['String', 'IntAct', 'BioGrid', 'Corum', 'HuRI', 'Predictomes', ...EXTENDED_DATABASES.map(([key]) => key)]
 
 const STATUS_STYLES = {
     pending: 'bg-slate-100 text-slate-700',
@@ -51,21 +65,44 @@ const DATABASE_STYLES = {
         label: 'text-indigo-800',
         surface: 'bg-indigo-50 border-indigo-200',
     },
+    ComplexPortal: { chip: 'bg-cyan-100 text-cyan-800 border-cyan-200', accent: 'bg-cyan-500', label: 'text-cyan-800', surface: 'bg-cyan-50 border-cyan-200' },
+    Reactome: { chip: 'bg-lime-100 text-lime-800 border-lime-200', accent: 'bg-lime-500', label: 'text-lime-800', surface: 'bg-lime-50 border-lime-200' },
+    Signor: { chip: 'bg-red-100 text-red-800 border-red-200', accent: 'bg-red-500', label: 'text-red-800', surface: 'bg-red-50 border-red-200' },
+    Hippie: { chip: 'bg-teal-100 text-teal-800 border-teal-200', accent: 'bg-teal-500', label: 'text-teal-800', surface: 'bg-teal-50 border-teal-200' },
+    HuMap: { chip: 'bg-violet-100 text-violet-800 border-violet-200', accent: 'bg-violet-500', label: 'text-violet-800', surface: 'bg-violet-50 border-violet-200' },
+    Mint: { chip: 'bg-pink-100 text-pink-800 border-pink-200', accent: 'bg-pink-500', label: 'text-pink-800', surface: 'bg-pink-50 border-pink-200' },
+}
+
+// Shareable searches: /?id=P04637&type=UniProtKB&tax=9606&db=String&db=IntAct&run=1
+function inputsFromUrl() {
+    const params = new URLSearchParams(window.location.search)
+    const id = params.get('id')?.trim()
+    if (!id) return null
+    return {
+        id: id.toUpperCase(),
+        type: INPUT_TYPES.includes(params.get('type')) ? params.get('type') : 'UniProtKB',
+        species: params.get('species') || '',
+        taxId: params.get('tax') || '',
+        databases: params.getAll('db').filter(db => ALL_DATABASES.includes(db)),
+        run: params.get('run') === '1',
+    }
 }
 
 const SearchSection = ({setresults}) => {
+    const [urlInputs] = useState(inputsFromUrl)
     const [search_type, setsearch_type] = useState('single_search');
-    const [from_database,setfrom_database]=useState('UniProtKB');
-    const[protein_id,setprotein_id]=useState('');
-    const [tax_id,settax_id]=useState('');
-    const [species_name,setspecies_name]=useState('');
+    const [from_database,setfrom_database]=useState(urlInputs?.type || 'UniProtKB');
+    const[protein_id,setprotein_id]=useState(urlInputs?.id || '');
+    const [tax_id,settax_id]=useState(urlInputs?.taxId || '');
+    const [species_name,setspecies_name]=useState(urlInputs?.species || '');
     const [speciesSuggestions,setspeciesSuggestions]=useState([])
     const [showSpeciesSuggestions,setshowSpeciesSuggestions]=useState(false)
     const [geneCandidates,setgeneCandidates]=useState([])
     const [selectedGeneCandidate,setselectedGeneCandidate]=useState(null)
     const [speciesJob,setspeciesJob]=useState(null)
     const [speciesLogOpen,setspeciesLogOpen]=useState(true)
-    const [selected_databases,setselected_databases]=useState([])
+    const [selected_databases,setselected_databases]=useState(urlInputs?.databases || [])
+    const [databaseStatuses,setDatabaseStatuses]=useState({})
     const [loading,setloading]=useState(false)
     const [loadingMessage,setloadingMessage]=useState('Searching databases...')
     const abortController = React.useRef(null)
@@ -164,7 +201,12 @@ const SearchSection = ({setresults}) => {
         }
     }, [speciesJob])
 
-    const performMainSearch = async (idValue, sourceDatabase) => {
+    const performMainSearch = async (idValue, sourceDatabase, overrides = {}) => {
+        const taxValue = overrides.taxId ?? tax_id
+        const speciesValue = overrides.speciesName ?? species_name
+        const databaseValue = overrides.databases ?? selected_databases
+        const originalInput = overrides.originalInput ?? protein_id
+        const originalType = overrides.originalType ?? from_database
         const mappingLabels = {
             GeneID: 'NCBI GeneID',
             Ensembl: 'Ensembl ID',
@@ -177,6 +219,8 @@ const SearchSection = ({setresults}) => {
         )
         setloading(true)
         setresults(null)
+        const requestedDatabases = databaseValue.length > 0 ? databaseValue : ALL_DATABASES
+        setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => [database, 'running'])))
         abortController.current = new AbortController()
 
         try{
@@ -185,16 +229,16 @@ const SearchSection = ({setresults}) => {
                 from_database: sourceDatabase
             })
 
-            if (tax_id.trim()) {
-                params.set('tax_id', tax_id.trim())
+            if (String(taxValue).trim()) {
+                params.set('tax_id', String(taxValue).trim())
             }
 
-            if (species_name.trim()) {
-                params.set('species_name', species_name.trim())
+            if (speciesValue.trim()) {
+                params.set('species_name', speciesValue.trim())
             }
 
-            if(selected_databases.length>0){
-                selected_databases.forEach(value => params.append('selected_databases', value))
+            if(databaseValue.length>0){
+                databaseValue.forEach(value => params.append('selected_databases', value))
             }
 
             const response=await fetch(`${API_BASE_URL}/search?${params.toString()}`,{signal: abortController.current.signal});
@@ -205,14 +249,20 @@ const SearchSection = ({setresults}) => {
             }
 
             if (data?.[0]?.Input) {
-                data[0].Input.OriginalInput = protein_id
-                data[0].Input.OriginalInputType = from_database
+                data[0].Input.OriginalInput = originalInput
+                data[0].Input.OriginalInputType = originalType
                 data[0].Input.ResolvedSearchId = idValue
             }
 
             setresults(data)
+            const output = data?.[1]?.output || []
+            setDatabaseStatuses(Object.fromEntries(requestedDatabases.map(database => {
+                const value = output.find(item => Object.hasOwn(item, database))?.[database]
+                const failed = typeof value === 'string' || value?.[0]?.info?.Error
+                return [database, failed ? 'failed' : 'completed']
+            })))
             settax_id(data?.[0]?.Input?.TaxonomyId || '')
-            setspecies_name(data?.[0]?.Input?.SpeciesName || species_name)
+            setspecies_name(data?.[0]?.Input?.SpeciesName || speciesValue)
             setshowSpeciesSuggestions(false)
             console.log(data);
         }catch(error){
@@ -221,6 +271,7 @@ const SearchSection = ({setresults}) => {
           } else {
             alert(error.message)
           }
+          setDatabaseStatuses(current => Object.fromEntries(Object.keys(current).map(database => [database, 'failed'])))
           console.log(error)
         }finally{
           setloading(false)
@@ -411,13 +462,38 @@ const SearchSection = ({setresults}) => {
         await performMainSearch(candidate.primary_accession, 'UniProtKB')
     }
 
+    const applyInputs = ({ id, type, species, taxId, databases }) => {
+        clearGeneCandidateState()
+        setsearch_type('single_search')
+        setfrom_database(type)
+        setprotein_id(id)
+        setspecies_name(species)
+        settax_id(taxId)
+        setselected_databases(databases)
+        setspeciesSuggestions([])
+        setshowSpeciesSuggestions(false)
+    }
+
+    const loadExample = () => applyInputs(SINGLE_EXAMPLE)
+
+    // A shared link with run=1 starts its search once on page load.
+    useEffect(() => {
+        if (!urlInputs?.run || urlInputs.type === 'Gene_Name') return
+        const timer = window.setTimeout(() => performMainSearch(urlInputs.id, urlInputs.type, {
+            taxId: urlInputs.taxId, speciesName: urlInputs.species, databases: urlInputs.databases,
+            originalInput: urlInputs.id, originalType: urlInputs.type,
+        }), 0)
+        return () => window.clearTimeout(timer)
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
+
 
   return (
     <div>
-      <section className="bg-slate-200 py-14 px-4 sm:px-6">
-      <div className="w-full max-w-[110rem] mx-auto">
-        <div className="bg-white shadow-md rounded-2xl p-8 grid gap-8 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start">
-        <div className="flex flex-col gap-4">
+      <section className="single-search-section px-4 sm:px-6">
+      <div className="app-frame w-full mx-auto">
+        <div className="single-search-card grid gap-8 lg:grid-cols-[minmax(15rem,21rem)_minmax(0,1fr)] lg:items-start">
+        <div className="database-picker flex flex-col gap-4">
         <label className='font-bold text-left'>Databases Selections:</label>
 
         <div className="space-y-2">
@@ -428,7 +504,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('String')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">STRING</span>
+        <span className={`database-status-dot ${databaseStatuses.String || 'idle'}`} /><span className="font-medium text-slate-900">STRING</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -438,7 +514,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('IntAct')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">IntAct</span>
+        <span className={`database-status-dot ${databaseStatuses.IntAct || 'idle'}`} /><span className="font-medium text-slate-900">IntAct</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -448,7 +524,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('BioGrid')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">BioGRID</span>
+        <span className={`database-status-dot ${databaseStatuses.BioGrid || 'idle'}`} /><span className="font-medium text-slate-900">BioGRID</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -458,7 +534,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Corum')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">CORUM</span>
+        <span className={`database-status-dot ${databaseStatuses.Corum || 'idle'}`} /><span className="font-medium text-slate-900">CORUM</span>
         </label>
 
         <label className="flex items-center gap-2">
@@ -468,7 +544,7 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('HuRI')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">HuRI</span>
+        <span className={`database-status-dot ${databaseStatuses.HuRI || 'idle'}`} /><span className="font-medium text-slate-900">HuRI</span>
         </label>
 
         <label className="flex items-center gap-2 mb-3">
@@ -478,12 +554,28 @@ const SearchSection = ({setresults}) => {
             checked={selected_databases.includes('Predictomes')}
             onChange={handleDatabaseChange}
         />
-        <span className="font-medium text-slate-900">Predictomes</span>
+        <span className={`database-status-dot ${databaseStatuses.Predictomes || 'idle'}`} /><span className="font-medium text-slate-900">Predictomes</span>
         </label>
+
+        {EXTENDED_DATABASES.map(([databaseKey, databaseLabel]) => (
+        <label key={databaseKey} className="flex items-center gap-2">
+        <input
+            type="checkbox"
+            value={databaseKey}
+            checked={selected_databases.includes(databaseKey)}
+            onChange={handleDatabaseChange}
+        />
+        <span className={`database-status-dot ${databaseStatuses[databaseKey] || 'idle'}`} /><span className="font-medium text-slate-900">{databaseLabel}</span>
+        </label>
+        ))}
         </div>
         </div>
         
         <div className="flex flex-col gap-4">
+    <div className="single-example-bar">
+        <button type="button" onClick={loadExample} className="single-example-button">Load example</button>
+        <span className="text-sm text-slate-600">Fills in human TP53 (UniProtKB P04637) and eight sources. <Link to="/help#single-results" className="underline">How to read the results</Link></span>
+    </div>
     <label className='font-bold text-left'>Search Type</label>
         <select
             value={search_type}
@@ -499,7 +591,6 @@ const SearchSection = ({setresults}) => {
             className="border border-gray-300 px-4 py-3 text-gray-700 focus:outline-none focus:ring-2"
           >
             <option value="single_search">Single Search</option>
-            <option value="complete_species">Complete Species PPI</option>
           </select>
 
         {search_type === 'single_search' && (
@@ -640,7 +731,7 @@ const SearchSection = ({setresults}) => {
           <div className="text-center lg:text-left">
             <p className="text-blue-900 font-semibold mb-3">{loadingMessage}</p>
             <div className="flex flex-col gap-2">
-              {(selected_databases.length > 0 ? selected_databases:['String', 'IntAct', 'BioGrid', 'Corum', 'Predictomes', 'HuRI']).map(db => (
+              {(selected_databases.length > 0 ? selected_databases : ALL_DATABASES).map(db => (
                 <div key={db} className="flex items-center gap-2 text-gray-600 justify-center lg:justify-start">
                     <div className="animate-pulse w-2 h-2  bg-blue-900"></div>
                     Searching {db}...

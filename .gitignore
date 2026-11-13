@@ -1,22 +1,41 @@
+# ---- Python ----
 .venv/
+venv/
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# ---- Node / frontend build ----
+node_modules/
+frontend/dist/
+*.log
+npm-debug.log*
+
+# ---- Local data, caches and runtime state (rebuilt by scripts/prepare_server.py) ----
 Data/
-*.tsv
-*.txt
-test*.py
-Data
-*.html
-*.tsv
-*.node
-*.cjs
-*.json
-*.js
-*.mjs
-*.mts
-!package.json
-!package-lock.json
-!scripts/
-!scripts/*.mjs
-frontend/node_modules/*
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.part
+
+# ---- Generated outputs ----
+api_example_outputs/
+klinkppi_output/
+
+# ---- Separate repository (cloned during installation, see README) ----
+embedding_FW/
+
+# ---- Secrets and local settings ----
+.env
+.env.*
+.claude/
+
+# ---- OS / editor files ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
