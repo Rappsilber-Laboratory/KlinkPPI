@@ -1,5 +1,20 @@
 # KlinkPPI
 
+[![Frontend CI](https://github.com/Rappsilber-Laboratory/KlinkPPI/actions/workflows/node.js.yml/badge.svg?branch=main)](https://github.com/Rappsilber-Laboratory/KlinkPPI/actions/workflows/node.js.yml)
+[![Python CI](https://github.com/Rappsilber-Laboratory/KlinkPPI/actions/workflows/python.yml/badge.svg?branch=main)](https://github.com/Rappsilber-Laboratory/KlinkPPI/actions/workflows/python.yml)
+![Python](https://img.shields.io/badge/Python-%E2%89%A53.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.11-EE4C2C?logo=pytorch&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-jobs_%26_index-003B57?logo=sqlite&logoColor=white)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#running-with-docker)
+![Formats](https://img.shields.io/badge/export-PSI--MI_TAB_2.8_%7C_Parquet-8A2BE2)
+![Platform](https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-FCC624?logo=linux&logoColor=black)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, `Predictomes`, `Complex Portal`, `Reactome`, `SIGNOR`, `HIPPIE`, `hu.MAP 3.0`, and `MINT`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
 
 ## Features
@@ -16,14 +31,9 @@ KlinkPPI is a web application for exploring protein-protein interaction (PPI) da
 
 ![Search Bar](imgs/intro.png)
 
-### Search
-
-![Search Bar](imgs/search.png)
-
 ### Results
 
 ![Search Summary](imgs/search_summary.png)
-![Sample Result 1](imgs/sample_result.png)
 
 ## Project Structure
 
