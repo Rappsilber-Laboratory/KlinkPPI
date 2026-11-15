@@ -27,6 +27,27 @@ The operator prepares the server once.
 4. Put `deploy/nginx-klinkppi.conf` (or the equivalent Apache config) in front for HTTPS
    on port 443. Monitor `https://<host>/api/health?details=true`.
 
+## Docker alternative
+
+Steps 1–3 can be replaced by the root `Dockerfile` (`embedding_FW/` must be cloned first):
+
+```bash
+docker build -t klinkppi .
+docker run --rm -v /srv/klinkppi/Data:/app/Data klinkppi python scripts/prepare_server.py --models
+docker run -d --name klinkppi --restart unless-stopped \
+  -p 127.0.0.1:8000:8000 -e FORWARDED_ALLOW_IPS='*' \
+  -e KLINKPPI_PUBLIC_API_URL=https://<host>/api \
+  -v /srv/klinkppi/Data:/app/Data klinkppi
+```
+
+Keep step 4 (nginx terminates HTTPS and proxies to `127.0.0.1:8000`). The port is
+published on localhost only, so trusting every forwarded address is safe: the proxy
+reaches the container through the Docker bridge, not from `127.0.0.1`. Results, the
+databases and the model weights (`Data/model_cache/`) live in the mounted folder, so
+updating is `docker build` + `docker rm -f klinkppi` + the same `docker run`. The
+container runs as UID 1000; if the host folder belongs to another user, build with
+`--build-arg UID=$(id -u)` or `chown` the folder.
+
 ## Configuration (environment variables)
 
 | Variable | Default | Meaning |

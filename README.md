@@ -96,6 +96,27 @@ Then open:
 http://localhost:5174
 ```
 
+### Running with Docker
+
+The `Dockerfile` builds the whole server (web app and API) into one image. Clone
+`embedding_FW/` first as described in [Installation](#installation). Your `Data/`
+folder is not copied into the image; it is mounted when the container starts, so
+databases, model weights and saved results stay on your machine.
+
+```bash
+docker build -t klinkppi .
+
+# Only once, if Data/ is empty: download and index the databases (+ model weights)
+docker run --rm -v "$PWD/Data:/app/Data" klinkppi python scripts/prepare_server.py --models
+
+docker run -d --name klinkppi -p 8000:8000 -v "$PWD/Data:/app/Data" klinkppi
+```
+
+Then open `http://localhost:8000`. The image uses CPU-only PyTorch. For a GPU image, add
+`--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu128` to the build and
+`--gpus all` to `docker run`. Server settings (`KLINKPPI_*`, see `deploy/README.md`) are
+passed with `-e`.
+
 ### Extended database data
 
 Complex Portal species files are cached automatically on first use. Reactome and MINT are queried through their PSICQUIC services; SIGNOR and HIPPIE use their public query APIs.

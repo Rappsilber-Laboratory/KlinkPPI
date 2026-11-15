@@ -1,0 +1,23 @@
+# Keep the build context small: Data/ (GBs) is mounted at run time,
+# environments and builds are recreated inside the image.
+Data/
+.venv/
+.venv.*/
+venv/
+**/node_modules/
+frontend/dist/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+.git/
+.github/
+.claude/
+.env
+.env.*
+imgs/
+manuscript_figures/
+ER Diagrams/
+api_example_outputs/
+klinkppi_output/
+*.sqlite3*
+*.log
