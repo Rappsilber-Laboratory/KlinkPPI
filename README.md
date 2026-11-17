@@ -15,10 +15,11 @@
 ![Platform](https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-FCC624?logo=linux&logoColor=black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, `Predictomes`, `Complex Portal`, `Reactome`, `SIGNOR`, `HIPPIE`, `hu.MAP 3.0`, and `MINT`, then lets users inspect and download the results in a `PSI-MI TAB 2.8`-compatible tab-delimited format or `Parquet`.
+KlinkPPI is a web application for exploring protein-protein interaction (PPI) data across multiple sources from one interface. It combines results from `STRING`, `CORUM`, `IntAct`, `BioGRID`, `HuRI`, `Predictomes`, `Complex Portal`, `Reactome`, `SIGNOR`, `HIPPIE`, `hu.MAP 3.0`, and `MINT`, then lets users inspect and download the results in different formats.
 
 ## Features
 
+- Single and collection searches
 - Search by `UniProtKB`, `GeneID`, `Ensembl`, or `Gene Name`
 - Filter queries by taxonomy ID
 - Query one database or several at once
@@ -71,15 +72,15 @@ nvm use 20
 Clone the repository and work from the project root:
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Rappsilber-Laboratory/KlinkPPI
 cd KlinkPPI
 ```
 
 Clone the PLM framework separately into the KlinkPPI project root before installing
-dependencies (skip this command if `embedding_FW/` is already present):
+dependencies:
 
 ```bash
-git clone https://github.com/lutfia95/embedding_FW.git embedding_FW
+git clone https://github.com/lutfia95/embedding_FW.git
 ```
 
 The folder must be named `embedding_FW` and sit beside `backend/` and `frontend/`.
@@ -109,7 +110,7 @@ http://localhost:5174
 ### Running with Docker
 
 The `Dockerfile` builds the whole server (web app and API) into one image. Clone
-`embedding_FW/` first as described in [Installation](#installation). Your `Data/`
+`embedding_FW/` first as described in [Installation](#installation). The `Data/`
 folder is not copied into the image; it is mounted when the container starts, so
 databases, model weights and saved results stay on your machine.
 

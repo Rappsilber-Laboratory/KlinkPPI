@@ -39,3 +39,4 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+.venv.conda-backup/
