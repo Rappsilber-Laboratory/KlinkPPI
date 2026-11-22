@@ -1,4 +1,5 @@
 import DBTable from './DBTable'
+import UniProtProtein from './UniProtProtein'
 import DatabaseResultCard from './DatabaseResultCard'
 
 const HuRiResults = ({ data }) => {
@@ -15,7 +16,7 @@ const HuRiResults = ({ data }) => {
     const rows = Interactions.map((i) => (
         <>
             <td className="px-4 py-3 text-gray-700">{i.Interactor_Gene_Name || '-'}</td>
-            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A_UniProt || i.Interactor_A || '-'}</td>
+            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A_UniProt || i.Interactor_A || '-'}<UniProtProtein accession={i.Interactor_A_UniProt || i.Interactor_A} /></td>
             <td className="px-4 py-3 text-slate-600">{i.Interactor_A_Ensembl || '-'}</td>
             <td className="px-4 py-3">
                 <a href={i.Interactor_Link} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline font-medium">View ↗</a>

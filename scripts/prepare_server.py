@@ -13,7 +13,7 @@ Steps (each is skipped when its output already exists):
   3. BioGRID SQLite lookup index       (built from the bundled MITAB file)
   4. Complex Portal caches for human and common model organisms
   5. Embedding model weights           (--models; avoids a slow first request)
-  6. The permanent example result used by the tutorial (--rebuild-example forces it)
+  6. The permanent batch and PPI example results used by the tutorial (--rebuild-example forces them)
 """
 from __future__ import annotations
 
@@ -45,15 +45,17 @@ def report():
     for name, ready in readiness["local_sources"].items():
         print(f"  {'OK     ' if ready else 'MISSING'} {name}")
     print(f"  {'OK     ' if readiness['embedding_backend'] else 'MISSING'} embedding backend (plms_framework)")
-    print(f"  {'OK     ' if readiness['example_result'] == 'completed' else 'MISSING'} example result ({readiness['example_result']})")
-    return all(readiness["local_sources"].values()) and readiness["embedding_backend"] and readiness["example_result"] == "completed"
+    print(f"  {'OK     ' if readiness['example_result'] == 'completed' else 'MISSING'} batch example result ({readiness['example_result']})")
+    print(f"  {'OK     ' if readiness['ppi_example_result'] == 'completed' else 'MISSING'} PPI example result ({readiness['ppi_example_result']})")
+    return (all(readiness["local_sources"].values()) and readiness["embedding_backend"]
+            and readiness["example_result"] == "completed" and readiness["ppi_example_result"] == "completed")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="only report readiness")
     parser.add_argument("--models", action="store_true", help="pre-download all enabled embedding models")
-    parser.add_argument("--rebuild-example", action="store_true", help="recompute the tutorial example result")
+    parser.add_argument("--rebuild-example", action="store_true", help="recompute the tutorial example results (batch and PPI)")
     args = parser.parse_args()
     if args.check:
         sys.exit(0 if report() else 1)
@@ -91,17 +93,18 @@ def main():
     else:
         step("5. Embedding model weights: skipped (use --models)")
 
-    step("6. Example result for the tutorial")
+    step("6. Example results for the tutorial (batch and PPI search)")
     from app.main import resolve_collection_database
     from app.services import collection_search
     from app.services.species_index import get_species_by_tax_id
     collection_search.configure(resolve_collection_database)
     databases = [db for db in collection_search.EXAMPLE_DATABASES if db in get_supported_databases("9606")]
-    job = collection_search.ensure_example(resolve_collection_database, get_species_by_tax_id("9606")["display_name"],
-                                           databases=databases, force=args.rebuild_example)
-    print(f"Example result: {job['status']} ({len((job.get('graph') or {}).get('edges', []))} edges)")
-    for warning in job.get("warnings", []):
-        print(f"  warning: {warning}")
+    for search_type in ("batch", "ppi"):
+        job = collection_search.ensure_example(resolve_collection_database, get_species_by_tax_id("9606")["display_name"],
+                                               databases=databases, force=args.rebuild_example, search_type=search_type)
+        print(f"{search_type.upper()} example result: {job['status']} ({len((job.get('graph') or {}).get('edges', []))} edges)")
+        for warning in job.get("warnings", []):
+            print(f"  warning: {warning}")
 
     sys.exit(0 if report() else 1)
 

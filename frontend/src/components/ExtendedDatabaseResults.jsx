@@ -1,4 +1,5 @@
 import DatabaseResultCard from './DatabaseResultCard'
+import UniProtProtein from './UniProtProtein'
 
 const CONFIG = {
   ComplexPortal: {
@@ -68,7 +69,7 @@ const ExtendedDatabaseResults = ({ dbKey, data }) => {
               <tr key={`${interaction.SIGNOR_ID || interaction.complex_id || interaction.Interactor_A}-${index}`} className="hover:bg-slate-50">
                 <td className="px-4 py-3 text-slate-400">{index + 1}</td>
                 {config.columns.map(([field]) => (
-                  <td key={field} className="max-w-sm px-4 py-3 text-slate-700">{displayValue(interaction[field])}</td>
+                  <td key={field} className="max-w-sm px-4 py-3 text-slate-700">{displayValue(interaction[field])}{field === 'Interactor_A' && <UniProtProtein accession={interaction[field]} />}</td>
                 ))}
               </tr>
             ))}

@@ -22,11 +22,12 @@ from time import monotonic
 RULES = [
     ("embedding", "POST", re.compile(r"^/collection/jobs/[^/]+/embeddings$")),
     ("alignment", "POST", re.compile(r"^/collection/jobs/[^/]+/alignments$")),
-    ("job", "POST", re.compile(r"^/collection/jobs(/[^/]+/(run|rerun))?$")),
+    ("job", "POST", re.compile(r"^/collection/(jobs|ppi-jobs)(/[^/]+/(run|rerun))?$")),
     ("job", "POST", re.compile(r"^/species-ppi/jobs$")),
     ("search", "GET", re.compile(r"^/search$")),
     ("export", "POST", re.compile(r"^/(mitab|parquet)$|^/species-ppi/jobs/[^/]+/(mitab|parquet)$")),
-    ("lookup", "GET", re.compile(r"^/collection/jobs/[^/]+/(shared-go|sequence)$")),
+    ("export", "GET", re.compile(r"^/collection/jobs/[^/]+/mitab$")),
+    ("lookup", "GET", re.compile(r"^/collection/jobs/[^/]+/(shared-go|sequence)$|^/uniprot/function$")),
 ]
 # bucket -> (requests, window seconds)
 LIMITS = {

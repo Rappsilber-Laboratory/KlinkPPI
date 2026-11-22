@@ -1,4 +1,5 @@
 import DBTable from './DBTable'
+import UniProtProtein from './UniProtProtein'
 import DatabaseResultCard from './DatabaseResultCard'
 
 const BioGridResults = ({ data }) => {
@@ -17,7 +18,7 @@ const BioGridResults = ({ data }) => {
 
     const rows = Interactions.map((i) => (
         <>
-            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}</td>
+            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}<UniProtProtein accession={i.Interactor_A} /></td>
             <td className="px-4 py-3 text-gray-700">{i.Interactor_Gene_Name || '-'}</td>
             <td className="px-4 py-3 text-gray-500 italic">{i.organism}</td>
             <td className="px-4 py-3 text-gray-600 text-xs">{i.Interaction_Detection_Method}</td>

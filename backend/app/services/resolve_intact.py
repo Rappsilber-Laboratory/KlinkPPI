@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 import math
 from urllib.parse import quote
@@ -12,6 +13,8 @@ METHOD2 = "interaction/countInteractionResult"
 URL1 = "https://rest.uniprot.org/taxonomy"
 REQUEST_TIMEOUT = 20
 PAGE_SIZE = 100
+# Result pages are independent requests; hubs such as TP53 span dozens of pages.
+PAGE_WORKERS = 4
 
 
 def _error_response(message: str):
@@ -99,13 +102,21 @@ def resolve_intact(input_id: str, tax_id: str):
 
         all_interactions = []
         iterations = math.ceil(int(result_num_interactions_json) / PAGE_SIZE)
-        for page in range(iterations):
-            result_interactions = _request_json(
+
+        def fetch_page(page):
+            return _request_json(
                 "GET",
                 f"{URL}/{METHOD3}/{intact_id}",
                 params={"page": page, "pageSize": PAGE_SIZE, "sort": []},
-            )
-            all_interactions.extend(result_interactions.get("content", []))
+            ).get("content", [])
+
+        if iterations > 1:
+            with ThreadPoolExecutor(max_workers=min(PAGE_WORKERS, iterations), thread_name_prefix="intact-pages") as executor:
+                pages = list(executor.map(fetch_page, range(iterations)))
+        else:
+            pages = [fetch_page(page) for page in range(iterations)]
+        for content in pages:
+            all_interactions.extend(content)
     except (requests.RequestException, ValueError, TypeError) as exc:
         return _error_response(f"IntAct request failed: {exc}")
 

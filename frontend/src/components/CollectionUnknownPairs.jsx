@@ -18,7 +18,8 @@ function SharedTerms({ result, source, target }) {
     </div>
 }
 
-export default function CollectionUnknownPairs({ job, graph }) {
+// `pairs` (PPI search) limits the table to requested pairs; otherwise every input pair without evidence.
+export default function CollectionUnknownPairs({ job, graph, pairs: requestedPairs = null }) {
     const embeddings = usePairEmbeddings(job.job_id)
     const sequences = useRef(new Map())
     const getSequence = accession => {
@@ -34,7 +35,8 @@ export default function CollectionUnknownPairs({ job, graph }) {
         }
         return sequences.current.get(key)
     }
-    const pairs = useMemo(() => unknownInputPairs(graph), [graph])
+    const pairs = useMemo(() => requestedPairs || unknownInputPairs(graph), [requestedPairs, graph])
+    const isPPI = Boolean(requestedPairs)
     const [query, setQuery] = useState('')
     const [page, setPage] = useState(0)
     const [results, setResults] = useState({})
@@ -114,15 +116,15 @@ export default function CollectionUnknownPairs({ job, graph }) {
     }
 
     return <section className="collection-card unknown-pairs" aria-label="Unknown interaction pairs">
-        <span className="collection-eyebrow">INDUCED NETWORK · UNEXPLORED PAIRS</span>
+        <span className="collection-eyebrow">{isPPI ? 'PPI SEARCH · UNKNOWN PAIRS' : 'INDUCED NETWORK · UNEXPLORED PAIRS'}</span>
         <h2>Pairs with no interaction found</h2>
-        <p>{pairs.length.toLocaleString()} pairs among your resolved input proteins have no interaction evidence in this search. Check GO for shared annotations, align their UniProt protein sequences, or compare embeddings with selected models.</p>
+        <p>{pairs.length.toLocaleString()} {isPPI ? 'of your requested PPIs have' : 'pairs among your resolved input proteins have'} no interaction evidence in this search. Check GO for shared annotations, align their UniProt protein sequences, or compare embeddings with selected models.</p>
         <p className="collection-note">This list uses the full search results before display filters. Missing evidence does not mean the proteins cannot interact. Shared GO terms describe common annotations and do not establish a protein interaction.</p>
         <p className="collection-note">Search BLASTP opens NCBI Protein BLAST with the FASTA and job title filled in; choose settings and start the search there. Copy FASTA fetches the same validated UniProt sequence. Find similar structures opens AlphaFold: choose “Similar structures” to search with Foldseek. If no model is available, Copy FASTA and paste it into the <a href="https://search.foldseek.com/" target="_blank" rel="noopener noreferrer">Foldseek server</a>.</p>
         {(graph.truncated || job.warnings?.length > 0) && <p className="collection-warning">Search coverage may be incomplete; review the coverage notes above before interpreting these pairs.</p>}
-        {!pairs.length ? <p>{graph.nodes.filter(node => node.input && !node.unresolved).length < 2 ? 'At least two resolved input proteins are needed to compare pairs.' : 'Every resolved input pair has interaction evidence in this search.'}</p> : <>
-            <label htmlFor="unknown-pair-search">Find a protein in these pairs</label>
-            <input id="unknown-pair-search" type="search" placeholder="Gene symbol or UniProt accession" value={query} onChange={event => { setQuery(event.target.value); setPage(0) }} />
+        {!pairs.length ? <p>{isPPI ? 'Every resolved requested PPI has interaction evidence in this search.' : graph.nodes.filter(node => node.input && !node.unresolved).length < 2 ? 'At least two resolved input proteins are needed to compare pairs.' : 'Every resolved input pair has interaction evidence in this search.'}</p> : <>
+            <label htmlFor={`unknown-pair-search-${job.job_id}`}>Find a protein in these pairs</label>
+            <input id={`unknown-pair-search-${job.job_id}`} type="search" placeholder="Gene symbol or UniProt accession" value={query} onChange={event => { setQuery(event.target.value); setPage(0) }} />
             <div className="collection-table-wrap"><table><thead><tr><th>Protein A</th><th>Protein B</th><th>Shared annotations</th><th>Alignment</th><th><EmbeddingModelPicker models={embeddings.models} selected={embeddings.selected} onChange={embeddings.setSelected} error={embeddings.catalogError} /></th></tr></thead><tbody>{filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE).map(pair => {
                 const result = results[pair.key]
                 const loading = pending === pair.key

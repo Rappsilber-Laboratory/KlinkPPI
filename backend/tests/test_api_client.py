@@ -275,3 +275,50 @@ console.log(JSON.stringify({...graph,statistics:computeStatistics(graph,job.data
                          "api_examples.gene_lookup", "api_examples.collection_search", "api_examples.collection_followups",
                          "api_examples.complete_species_search", "api_examples.local_species_download"):
                 importlib.import_module(name)
+
+
+class PPIClientContractTests(unittest.TestCase):
+    """PPI search, MITAB download and UniProt function through real ASGI routing."""
+    def setUp(self):
+        self.api = KlinkPPIClient("http://test", session=ASGISession())
+
+    def test_pair_parsing_matches_web_app(self):
+        self.assertEqual(KlinkPPIClient.normalize_pairs(["TP53-MDM2", "P04637-2-Q00987", "mdm2 tp53", "A-A", ["X", "Y"]]),
+                         [["TP53", "MDM2"], ["P04637-2", "Q00987"], ["X", "Y"]])
+        with self.assertRaises(ValueError):
+            KlinkPPIClient.normalize_pairs(["HLA-A-HLA-B"])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pairs.txt"
+            path.write_text("﻿TP53-MDM2\n\nBRCA1,BARD1\n", encoding="utf-8")
+            self.assertEqual(KlinkPPIClient.read_pairs(path), [["TP53", "MDM2"], ["BRCA1", "BARD1"]])
+
+    @patch.object(main.collection_search, "create_job", return_value={"job_id": "ppi", "status": "resolving"})
+    @patch.object(main, "get_supported_databases", return_value=["IntAct"])
+    @patch.object(main, "resolve_species_context", return_value=("9606", None, {"display_name": "Homo sapiens"}))
+    def test_start_ppi_posts_pairs_and_neighbor_settings(self, species, databases, create):
+        job = self.api.start_ppi(["TP53-MDM2"], species_name="Homo sapiens", tax_id="9606", databases=["IntAct"],
+                                 mode="expanded", neighbor_limit=4, neighbor_scope="pair")
+        self.assertEqual(job["job_id"], "ppi")
+        self.assertEqual(create.call_args.kwargs["pairs"], [["TP53", "MDM2"]])
+        self.assertEqual((create.call_args.kwargs["neighbor_limit"], create.call_args.kwargs["neighbor_scope"]), (4, "pair"))
+
+    def test_mitab_download_with_filters_and_requested_pairs(self):
+        job = fixture_job()
+        job["pairs"] = [["P04637", "P38398"]]
+        job["graph"]["queried_pairs"] = [{"inputs": ["P04637", "P38398"], "source": "P04637", "target": "P38398",
+                                          "status": "known", "edge": "e0"}]
+        with patch.object(main.collection_search, "snapshot", return_value=job), tempfile.TemporaryDirectory() as directory:
+            every = self.api.download_collection_mitab("fixture", Path(directory) / "all.mitab.txt")
+            pairs = self.api.download_collection_mitab("fixture", Path(directory) / "pairs.mitab.txt",
+                                                       queried_pairs_only=True, databases=["IntAct"])
+            self.assertEqual(len(every.read_text().splitlines()), 1 + 5)   # header + one row per evidence record
+            rows = pairs.read_text().splitlines()[1:]
+            self.assertEqual(len(rows), 1)
+            self.assertTrue(rows[0].startswith("uniprotkb:P04637\tuniprotkb:P38398"))
+        self.assertEqual(KlinkPPIClient.queried_pairs(job)[0]["status"], "known")
+
+    @patch.object(main, "protein_function", return_value={"accession": "P04637", "function": []})
+    def test_protein_function(self, lookup):
+        self.assertEqual(self.api.protein_function("P04637")["accession"], "P04637")
+        self.api.protein_function(gene="MDM2", tax_id="9606")
+        self.assertEqual(lookup.call_args.args[:3], (None, "MDM2", "9606"))

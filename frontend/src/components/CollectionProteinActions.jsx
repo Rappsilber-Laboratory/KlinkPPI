@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { postBlast } from '../collection/proteinActions'
+import UniProtProtein from './UniProtProtein'
 
 export default function CollectionProteinActions({ protein, species, getSequence }) {
     const [loading, setLoading] = useState(false)
@@ -49,6 +50,7 @@ export default function CollectionProteinActions({ protein, species, getSequence
             <button type="button" disabled={loading} onClick={() => act('copy')}>Copy FASTA</button>
             <a href={`https://www.alphafold.ebi.ac.uk/entry/${encodeURIComponent(protein.id)}`} target="_blank" rel="noopener noreferrer">Find similar structures ↗</a>
         </div>
+        <UniProtProtein accession={protein.id} />
         <div aria-live="polite">{loading && <p role="status">Fetching UniProt sequence…</p>}{message && <p role="status">{message}</p>}</div>
         {error && <p className="collection-error" role="alert">{error}</p>}
         {fasta && <label>FASTA for {protein.gene} ({protein.id})<textarea readOnly rows={5} value={fasta} onFocus={event => event.target.select()} onClick={event => event.target.select()} /></label>}

@@ -1,7 +1,7 @@
 import { blastFields } from '../src/collection/proteinActions.js'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { computeStatistics, filterGraph, parseIdentifiers, unknownInputPairs } from '../src/collection/analysis.js'
+import { computeStatistics, filterGraph, parseIdentifiers, parsePairs, queriedPairRows, unknownInputPairs, unknownQueriedPairs } from '../src/collection/analysis.js'
 import { cx, graphML, sif, xml } from '../src/collection/exports.js'
 import { alignmentBlocks, residueGroup } from '../src/collection/alignment.js'
 
@@ -144,4 +144,24 @@ test('BLAST prefill preserves long FASTA and opens the settings form without sub
     assert.equal(fields.CMD, 'Web')
     assert.equal(fields.PAGE, 'Proteins')
     assert.match(fields.JOB_TITLE, /TP53.*P04637.*Homo sapiens/)
+})
+
+test('PPI lists accept common separators and resolve hyphen pairs only when unambiguous', () => {
+    const parsed = parsePairs('TP53-MDM2\nP04637-2-Q00987\nNKX2-1-TP53\nBRCA1\tBARD1\nPALB2, BRCA2\nRAD51 XRCC3\nATM - CHEK2\nmdm2-tp53\nTP53-TP53\n')
+    assert.deepEqual(parsed.pairs, [['TP53', 'MDM2'], ['P04637-2', 'Q00987'], ['NKX2-1', 'TP53'], ['BRCA1', 'BARD1'], ['PALB2', 'BRCA2'], ['RAD51', 'XRCC3'], ['ATM', 'CHEK2']])
+    assert.equal(parsed.duplicates, 1)
+    assert.equal(parsed.selfPairs, 1)
+    assert.throws(() => parsePairs('HLA-A-HLA-B'), /Line 1/)
+    assert.throws(() => parsePairs('TP53'), /Line 1/)
+    assert.throws(() => parsePairs('A B C'), /Line 1/)
+    assert.throws(() => parsePairs(Array.from({ length: 101 }, (_, i) => `A${i}-B${i}`).join('\n')), /100 distinct PPIs/)
+})
+
+test('queried PPIs report filtered evidence and unknown pairs for follow-ups', () => {
+    const node = id => ({ id, gene: id, input: true })
+    const raw = { nodes: ['A', 'B', 'C'].map(node), edges: [{ id: 'e0', source: 'A', target: 'B', evidence: [{ database: 'IntAct' }] }],
+        queried_pairs: [{ inputs: ['a', 'b'], source: 'A', target: 'B', status: 'known', edge: 'e0' }, { inputs: ['b', 'c'], source: 'B', target: 'C', status: 'unknown' }, { inputs: ['c', 'b'], source: 'C', target: 'B', status: 'unknown' }] }
+    assert.deepEqual(queriedPairRows(raw, raw).map(row => row.status), ['known', 'unknown', 'unknown'])
+    assert.deepEqual(queriedPairRows(raw, { ...raw, edges: [] }).map(row => row.status), ['filtered', 'unknown', 'unknown'])
+    assert.deepEqual(unknownQueriedPairs(raw).map(pair => [pair.source.id, pair.target.id]), [['B', 'C']])
 })

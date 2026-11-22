@@ -16,6 +16,8 @@ Run one workflow at a time. The main entry points are equivalent:
 .venv/bin/python api_example.py single
 .venv/bin/python python_api_example.py gene --gene TP53 --tax-id 9606
 .venv/bin/python python_api_example.py collection
+.venv/bin/python python_api_example.py ppi
+.venv/bin/python python_api_example.py function P04637 Q00987
 .venv/bin/python python_api_example.py complete-species --tax-id 9606 --databases IntAct BioGrid
 ```
 
@@ -51,7 +53,10 @@ an adjacent temporary file and replace the destination only after success.
 | Single-search MITAB and Parquet | `single_search.py` | `download_single`; `POST /mitab`, `/parquet` |
 | Complete species, progress, resume, cancel | `complete_species_search.py` | `start_species`, `get_species`, `wait_species`, `cancel_species`; `/species-ppi/jobs` and `/{job_id}[/cancel]` |
 | Species MITAB and Parquet | `complete_species_search.py` | `download_species`; `POST /species-ppi/jobs/{job_id}/{mitab,parquet}` |
-| Collection resolution, review, induced/expanded search | `collection_search.py` | `start_collection`, `get_collection`, `wait_collection`, `run_collection`; `/collection/jobs`, `/{job_id}`, `/{job_id}/run` |
+| Batch search: resolution, review, induced/expanded search, neighbor limit | `collection_search.py` | `start_collection(..., neighbor_limit=)`, `get_collection`, `wait_collection`, `run_collection`; `/collection/jobs`, `/{job_id}`, `/{job_id}/run` |
+| PPI search: specific pairs, requested-pair status | `ppi_search.py` | `read_pairs`, `normalize_pairs`, `start_ppi`, `ppi_search`, `queried_pairs`; `POST /collection/ppi-jobs`, then the collection job routes |
+| Batch/PPI MITAB (whole network or requested pairs) | `collection_search.py`, `ppi_search.py` | `download_collection_mitab`; `GET /collection/jobs/{job_id}/mitab` |
+| UniProt link and protein function ("Show function") | `protein_function.py` | `protein_function`; `GET /uniprot/function?accession=…` or `?gene=…&tax_id=…` |
 | Collection rerun and cancel | `collection_search.py` | `rerun_collection`, `cancel_collection`; `POST /collection/jobs/{job_id}/{rerun,cancel}` |
 | Network filters and statistics | `collection_followups.py` | `collection_analysis`; `GET /collection/jobs/{job_id}/analysis` |
 | Graph JSON, GraphML, SIF, Cytoscape CX; node/edge CSV | `collection_search.py` | `export_network`, `export_collection_csv` (local exports from API data) |
@@ -148,6 +153,69 @@ with KlinkPPIClient() as api:
         raise
 ```
 
+## PPI search (specific protein pairs)
+
+A PPI search checks up to **100 distinct pairs** over at most 100 distinct proteins.
+Pairs are `[A, B]` lists or strings: `"A-B"`, or two IDs separated by a tab, comma,
+semicolon or space. A hyphen is split only when exactly one split leaves two IDs, so
+`P04637-2-Q00987` works but `HLA-A-HLA-B` must be written `HLA-A,HLA-B`. `A-B` and
+`B-A` are merged and self-pairs are dropped. Files use the same format, one pair per
+line, no header (see `frontend/public/examples/ppi_example.txt`).
+
+```bash
+.venv/bin/python python_api_example.py ppi                                # the web app's example pairs
+.venv/bin/python python_api_example.py ppi --pairs TP53-MDM2 BRCA1-BARD1 --databases IntAct BioGrid
+.venv/bin/python python_api_example.py ppi --file my_pairs.txt --mode expanded --neighbor-limit 5 --neighbor-scope pair
+.venv/bin/python python_api_example.py ppi --job-id ppi-example          # the permanent read-only example
+```
+
+The example prints every requested pair with its status (`known`, `unknown`,
+`unresolved`, `same_protein`) and supporting databases, writes `ppi_search.json`,
+and downloads `ppi_requested_pairs.mitab.txt` (requested pairs only) and
+`ppi_network.mitab.txt` (whole network). ID review works as for collections
+(`--job-id` and `--choices`). In Python:
+
+```python
+with KlinkPPIClient() as api:
+    job = api.ppi_search(["TP53-MDM2", ["BRCA1", "BARD1"]], species_name="Homo sapiens", tax_id="9606",
+                         databases=["IntAct", "BioGrid"], input_type="Gene_Name",
+                         choices={"TP53": "P04637", "MDM2": "Q00987", "BRCA1": "P38398", "BARD1": "Q99728"})
+    for pair in api.queried_pairs(job):
+        print(pair["inputs"], pair["status"])
+    api.download_collection_mitab(job["job_id"], "pairs.mitab.txt", queried_pairs_only=True)
+```
+
+Pairs with status `unknown` accept `shared_go`, `align_pair` and `embed_pair` in
+both induced and expanded mode.
+
+## Expanded networks: neighbor limit
+
+`neighbor_limit` (1–200, server default 10) sets how many first neighbors are kept
+per input protein (`start_collection`, `start_ppi`) or, with
+`neighbor_scope="pair"` in a PPI search, per pair. Neighbors are ranked by supporting
+databases, then publications, then evidence records; per pair, neighbors of both
+proteins come first. The completed graph reports
+`graph["neighbor_limit"] = {"limit", "scope", "shown", "hidden"}`.
+
+## MITAB export of batch and PPI networks
+
+`download_collection_mitab(job_id, path, **filters)` downloads PSI-MI TAB from
+`GET /collection/jobs/{job_id}/mitab`, with the same filters as `collection_analysis`
+and one row per evidence record. Add `queried_pairs_only=True` for a PPI search's
+requested pairs. The columns match the single-search MITAB export.
+
+## UniProt protein function
+
+```bash
+.venv/bin/python python_api_example.py function P04637 Q00987
+.venv/bin/python python_api_example.py function --gene MDM2 --tax-id 9606
+```
+
+`protein_function(accession)` or `protein_function(gene=..., tax_id=...)` returns the
+protein name, gene, organism, review status, entry URL and `function`: a list of
+`{"text", "pubmed"}` paragraphs from the UniProt entry's Function section (the
+first section of the entry page). Gene lookups prefer reviewed entries.
+
 ## Filters, statistics and followups
 
 Run followups against a saved completed collection while its server job is live:
@@ -162,8 +230,8 @@ The first command fetches network analysis and lists unknown pairs. Choosing a p
 fetches both protein sequences, exact shared GO terms, and a global alignment.
 Each lookup handles failure independently; rerunning the command retries failed
 lookups and reuses successful server sequence caches. GO/alignment comparisons
-require a completed **induced** collection and a distinct resolved input pair with
-no interaction evidence in the full result. Missing evidence, shared GO terms and
+require a completed **induced** collection (or a PPI search in either mode) and a
+distinct resolved input pair with no interaction evidence in the full result. Missing evidence, shared GO terms and
 sequence similarity do not establish whether two proteins interact.
 
 `collection_analysis` mirrors web filters: selected databases, `evidence_type`

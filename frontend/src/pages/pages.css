@@ -44,6 +44,9 @@
 .single-example-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1rem; border: 1px dashed #9ec9bd; border-radius: .75rem; background: #f3faf7; }
 .single-example-button { padding: .5rem 1rem; border-radius: .5rem; background: #0f766e; color: white; font-weight: 600; }
 .single-example-button:hover { background: #115e59; }
+.single-example-button.secondary { background: white; color: #0f766e; border: 1px solid #0f766e; }
+.single-example-button.secondary:hover { background: #f0fdfa; }
+.single-example-button:disabled { opacity: .55; cursor: default; }
 
 /* Collection result link */
 .result-link { width: 100%; background: #f0fdf9; border: 1px solid #99d8c6; border-radius: clamp(.7rem,1.2vw,1.25rem); padding: 1rem 1.25rem; margin-bottom: clamp(1rem,1.5vw,1.5rem); }

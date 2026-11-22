@@ -5,6 +5,17 @@ from statistics import mean, median
 
 
 def analyze(job, databases=None, evidence_type="all", method="", score_database="", min_score=None, min_publications=0):
+    graph, filters = filter_graph(job, databases, evidence_type, method, score_database, min_score, min_publications)
+    return {**graph, "statistics": statistics(graph, job["databases"]),
+            "analysis": {"species": job["species"], "tax_id": job["tax_id"], "mode": job["mode"],
+                         "search_type": job.get("search_type", "batch"), "pairs": job.get("pairs"),
+                         "neighbor_limit": job.get("neighbor_limit"), "neighbor_scope": job.get("neighbor_scope"),
+                         "filters": filters, "resolution": job.get("resolution", []),
+                         "selections": job.get("selections", {}), "warnings": job.get("warnings", [])}}
+
+
+def filter_graph(job, databases=None, evidence_type="all", method="", score_database="", min_score=None, min_publications=0):
+    """Apply the web UI's evidence filters; return (graph, filters)."""
     if job["status"] != "completed":
         raise ValueError("Analysis requires a completed collection.")
     databases = list(dict.fromkeys(job["databases"] if databases is None else databases))
@@ -32,10 +43,7 @@ def analyze(job, databases=None, evidence_type="all", method="", score_database=
     filters = {"databases": databases, "type": evidence_type, "method": method,
                "scoreDatabase": score_database, "minScore": "" if min_score is None else min_score,
                "minPublications": min_publications}
-    return {**graph, "statistics": statistics(graph, job["databases"]),
-            "analysis": {"species": job["species"], "tax_id": job["tax_id"], "mode": job["mode"],
-                         "filters": filters, "resolution": job.get("resolution", []),
-                         "selections": job.get("selections", {}), "warnings": job.get("warnings", [])}}
+    return graph, filters
 
 
 def statistics(graph, databases):

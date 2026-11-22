@@ -14,20 +14,22 @@ const GROUPS = [
         ['GET', '/downloads/klinkppi_template.py', 'The Python template script, preconfigured for this server.', '/downloads/klinkppi_template.py'],
         ['GET', '/downloads/klinkppi.py', 'Full Python client library (requests only).', '/downloads/klinkppi.py'],
     ]],
-    ['Single-protein search', [
+    ['Single entry search', [
         ['GET', '/search', 'Interactions of one protein in the selected sources. Parameters: id_value, from_database (UniProtKB | GeneID | Ensembl | Gene_Name), tax_id or species_name (optional), selected_databases (repeatable). Returns [ {Input}, {output: [ {Source: [ {info}, {rows} ]} ]} ].', '/search?id_value=P04637&from_database=UniProtKB&tax_id=9606&selected_databases=IntAct&selected_databases=String'],
         ['POST', '/mitab', 'Convert a /search result to PSI-MI TAB 2.8-compatible text. Body: {results, selected_databases, selected_columns, uniprot_id, tax_id}.'],
         ['POST', '/parquet', 'Same body as /mitab; returns an Apache Parquet file with all source-specific columns.'],
     ]],
-    ['Collection analysis (asynchronous jobs)', [
-        ['POST', '/collection/jobs', 'Start a job: {identifiers (≤ MAX), species_name, tax_id, selected_databases, input_type: auto|UniProtKB|Gene_Name|Ensembl|GeneID, mode: induced|expanded}. Returns the job with job_id; status "resolving".'],
-        ['GET', '/collection/jobs/{job_id}', 'Job status (resolving → awaiting_selection → running → completed | failed | cancelled), progress, per-source status, ID resolution, warnings, and the network graph when completed.', '/collection/jobs/example'],
+    ['Batch and PPI search (asynchronous jobs)', [
+        ['POST', '/collection/jobs', 'Start a job: {identifiers (≤ MAX), species_name, tax_id, selected_databases, input_type: auto|UniProtKB|Gene_Name|Ensembl|GeneID, mode: induced|expanded, neighbor_limit (expanded: first neighbors per protein, default 10)}. Returns the job with job_id; status "resolving".'],
+        ['POST', '/collection/ppi-jobs', 'PPI search: {pairs: [[A, B], …] (≤ 100 pairs), species_name, tax_id, selected_databases, input_type, mode, neighbor_limit, neighbor_scope: protein|pair}. Same job endpoints as batch search; the completed graph lists queried_pairs with status known|unknown|unresolved|same_protein.'],
+        ['GET', '/collection/jobs/{job_id}', 'Job status (batch and PPI) (resolving → awaiting_selection → running → completed | failed | cancelled), progress, per-source status, ID resolution, warnings, and the network graph when completed.', '/collection/jobs/example'],
         ['POST', '/collection/jobs/{job_id}/run', 'Confirm the mapping and start the analysis: {choices: {input: accession | null}} for every ambiguous input (null skips it).'],
         ['POST', '/collection/jobs/{job_id}/rerun', 'Query the sources again with the same inputs and mappings (completed jobs).'],
         ['POST', '/collection/jobs/{job_id}/cancel', 'Cancel a resolving, waiting or running job.'],
         ['GET', '/collection/jobs/{job_id}/analysis', 'Filtered network plus statistics. Filters: databases (repeatable), evidence_type (all|direct|functional|predicted), method, score_database, min_score, min_publications.', '/collection/jobs/example/analysis?evidence_type=direct'],
     ]],
     ['Follow-ups for pairs without interaction evidence (induced jobs)', [
+        ['GET', '/collection/jobs/{job_id}/mitab', 'PSI-MI TAB of the filtered network, one row per evidence record. Same filters as /analysis; queried_pairs_only=true exports only the requested pairs of a PPI search.', '/collection/jobs/ppi-example/mitab?queried_pairs_only=true'],
         ['GET', '/collection/jobs/{job_id}/shared-go', 'GO terms annotated to both proteins: source, target (accessions).'],
         ['GET', '/collection/jobs/{job_id}/sequence', 'UniProt sequence and FASTA of one input protein: accession.'],
         ['POST', '/collection/jobs/{job_id}/alignments', 'Queue a global pairwise alignment: {source, target}. Returns alignment_id.'],
@@ -35,6 +37,9 @@ const GROUPS = [
         ['GET', '/collection/embedding-models', 'Available protein language models and the meaning of every score.', '/collection/embedding-models'],
         ['POST', '/collection/jobs/{job_id}/embeddings', 'Queue an embedding comparison: {source, target, models: [..]} (≤ 3 models).'],
         ['GET', '/collection/jobs/{job_id}/embeddings/{embedding_id}', 'Queue position, progress, runtime and scores with explanations.'],
+    ]],
+    ['UniProt protein information', [
+        ['GET', '/uniprot/function', 'UniProt protein name, gene, organism and Function section with PubMed citations (as shown first on the UniProt entry page). Parameters: accession, or gene and tax_id (best match, reviewed entries first). Cached for one hour.', '/uniprot/function?accession=P04637'],
     ]],
     ['Complete-species export (API only)', [
         ['POST', '/species-ppi/jobs', 'Start a whole-proteome export: {tax_id or species_name, selected_databases}.'],
@@ -55,7 +60,7 @@ export default function WebServicesPage() {
 
         <section id="template">
             <h2>Template script</h2>
-            <p>The template is a single Python file that needs only <code>requests</code>. It calls the limits, species, single-search, MITAB, collection, statistics, shared-GO, alignment and (optionally) embedding services, parses their output and writes TSV files. Each service is a short function that is easy to adapt to your own pipeline.</p>
+            <p>The template is a single Python file that needs only <code>requests</code>. It calls the limits, species, single entry search, MITAB, batch search, PPI search, statistics, shared-GO, alignment, UniProt function and (optionally) embedding services, parses their output and writes TSV files. Each service is a short function that is easy to adapt to your own pipeline.</p>
             <p className="doc-actions">
                 <a className="doc-button" href={`${API}/downloads/klinkppi_template.py`} download>Download klinkppi_template.py</a>
                 <a className="doc-button secondary" href={`${API}/downloads/klinkppi.py`} download>Download the full client library (klinkppi.py)</a>
@@ -64,6 +69,7 @@ export default function WebServicesPage() {
             <pre>{`pip install requests
 python klinkppi_template.py                     # all steps with the example data
 python klinkppi_template.py --steps collection --ids TP53 MDM2 CDKN1A --species "Homo sapiens"
+python klinkppi_template.py --steps ppi --pairs TP53-MDM2 BRCA1-BARD1 RAD51C-DMC1 --species "Homo sapiens"
 python klinkppi_template.py --help`}</pre>
             <p>The downloaded script already points to <code>{base}</code>. Minimal example without the template:</p>
             <pre>{`import requests, time
@@ -78,11 +84,22 @@ while (job := requests.get(f"{API}/collection/jobs/{job['job_id']}").json())["st
     time.sleep(2)
 for edge in job["graph"]["edges"]:
     print(edge["source"], edge["target"], sorted({ev["database"] for ev in edge["evidence"]}))`}</pre>
+            <p>A PPI search uses the same job endpoints; only the start request differs. Each requested pair is reported in <code>graph.queried_pairs</code>, and MITAB downloads directly:</p>
+            <pre>{`job = requests.post(f"{API}/collection/ppi-jobs", json={
+    "pairs": [["TP53", "MDM2"], ["BRCA1", "BARD1"]], "species_name": "Homo sapiens",
+    "selected_databases": ["IntAct", "BioGrid"], "input_type": "Gene_Name",
+    "mode": "expanded", "neighbor_limit": 5, "neighbor_scope": "pair"}).json()
+# ... poll, choose mappings with /run and poll again, exactly as above ...
+for pair in job["graph"]["queried_pairs"]:
+    print(pair["inputs"], pair["status"])          # known | unknown | unresolved | same_protein
+mitab = requests.get(f"{API}/collection/jobs/{job['job_id']}/mitab", params={"queried_pairs_only": "true"})
+open("my_ppis.mitab.txt", "w").write(mitab.text)
+print(requests.get(f"{API}/uniprot/function", params={"accession": "P04637"}).json()["function"][0]["text"])`}</pre>
         </section>
 
         <section id="endpoints">
             <h2>All web services</h2>
-            <p>Base URL: <code>{base}</code>. Collections accept up to {limits.collection_max_identifiers} identifiers; job results are kept for {limits.result_retention_days} days. The permanent example job <code>{limits.example_job_id}</code> can be used for testing.</p>
+            <p>Base URL: <code>{base}</code>. Batch searches accept up to {limits.collection_max_identifiers} identifiers and PPI searches up to {limits.ppi_max_pairs} pairs; expanded networks show up to {limits.max_neighbor_limit} neighbours per protein or PPI (default {limits.default_neighbor_limit}). Job results are kept for {limits.result_retention_days} days. The permanent example jobs <code>{limits.example_job_id}</code> (batch) and <code>{limits.ppi_example_job_id}</code> (PPI) can be used for testing.</p>
             {GROUPS.map(([group, rows]) => <div key={group} className="doc-endpoint-group">
                 <h3>{group}</h3>
                 <table className="doc-endpoints"><thead><tr><th>Method</th><th>URL</th><th>Description</th></tr></thead>
@@ -98,7 +115,7 @@ for edge in job["graph"]["edges"]:
             <h2>Conventions</h2>
             <ul>
                 <li>Requests and responses are JSON (UTF-8), except the file downloads.</li>
-                <li>Long analyses are asynchronous: submit, keep the returned <code>job_id</code>, and poll the status URL every 1–5 seconds. The same job opens in the browser at <code>{window.location.origin}{import.meta.env.BASE_URL.replace(/\/+$/, '')}/results/&lt;job_id&gt;</code>.</li>
+                <li>Long analyses are asynchronous: submit, keep the returned <code>job_id</code>, and poll the status URL every 1–5 seconds. The same job opens in the browser at <code>{window.location.origin}{import.meta.env.BASE_URL.replace(/\/+$/, '')}/results/&lt;job_id&gt;</code> (batch) or <code>…/ppi-results/&lt;job_id&gt;</code> (PPI).</li>
                 <li>Errors use HTTP status codes with a <code>detail</code> message: 400 invalid input, 404 unknown or expired job, 429 queue full or fair-use limit (honour the <code>Retry-After</code> header), 502 an external source failed.</li>
                 <li>Please run large batches sequentially. Contact us for bulk use (see <Link to="/privacy">contact</Link>).</li>
             </ul>

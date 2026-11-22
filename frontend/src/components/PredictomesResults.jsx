@@ -1,4 +1,5 @@
 import DBTable from './DBTable'
+import UniProtProtein from './UniProtProtein'
 import DatabaseResultCard from './DatabaseResultCard'
 
 const PredictomesResults = ({ data }) => {
@@ -16,7 +17,7 @@ const PredictomesResults = ({ data }) => {
 
     const rows = Interactions.map((i) => (
         <>
-            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}</td>
+            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}<UniProtProtein accession={i.Interactor_A} /></td>
             <td className="px-4 py-3 text-gray-700">{i.Interactor_Gene_Name || '-'}</td>
             <td className="px-4 py-3">
                 <span className={`font-bold ${i.spoc_score >= 0.7 ? 'text-green-600' : i.spoc_score >= 0.5 ? 'text-yellow-600' : 'text-gray-600'}`}>

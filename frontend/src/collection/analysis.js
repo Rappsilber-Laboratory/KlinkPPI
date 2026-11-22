@@ -3,6 +3,14 @@ export const DATABASES = ['String', 'IntAct', 'BioGrid', 'Corum', 'HuRI', 'Predi
 export const COLORS = { String: '#0284c7', IntAct: '#c026d3', BioGrid: '#059669', Corum: '#d97706', HuRI: '#e11d48', Predictomes: '#4f46e5', ComplexPortal: '#0891b2', Reactome: '#65a30d', Signor: '#dc2626', Hippie: '#0d9488', HuMap: '#7c3aed', Mint: '#db2777' }
 export const LABELS = { String: 'STRING', BioGrid: 'BioGRID', Corum: 'CORUM', Signor: 'SIGNOR', Hippie: 'HIPPIE', HuMap: 'hu.MAP', ComplexPortal: 'Complex Portal' }
 
+// PPI searches compare only the requested pairs that have no evidence.
+export function unknownQueriedPairs(graph) {
+    const nodes = new Map(graph.nodes.map(node => [node.id, node]))
+    const pairs = (graph.queried_pairs || []).filter(pair => pair.status === 'unknown' && nodes.has(pair.source) && nodes.has(pair.target))
+        .map(pair => ({ key: JSON.stringify([pair.source, pair.target].sort()), source: nodes.get(pair.source), target: nodes.get(pair.target) }))
+    return pairs.filter((pair, index) => pairs.findIndex(other => other.key === pair.key) === index)
+}
+
 export function unknownInputPairs(graph) {
     const nodes = [...new Map(graph.nodes.filter(node => node.input && !node.unresolved).map(node => [node.id, node])).values()]
     const key = (a, b) => JSON.stringify([a, b].sort())
@@ -30,6 +38,57 @@ export function parseIdentifiers(text) {
     if (!ids.length) throw new Error('Paste or upload at least one identifier.')
     if (ids.length > MAX_IDENTIFIERS) throw new Error(`Use up to ${MAX_IDENTIFIERS} distinct identifiers per collection.`)
     return { ids, duplicates: result.length - ids.length }
+}
+
+export const MAX_PAIRS = 100
+export const MAX_PAIR_PROTEINS = 2 * MAX_IDENTIFIERS
+
+// "A-B" is ambiguous when an ID contains a hyphen (P04637-2, HLA-A, NKX2-1).
+// Split at the only hyphen that leaves two IDs and no isoform suffix on the right.
+function splitHyphenPair(line) {
+    const options = []
+    for (let index = line.indexOf('-'); index > 0; index = line.indexOf('-', index + 1)) {
+        const left = line.slice(0, index), right = line.slice(index + 1)
+        if (left && right && !/^\d+(-|$)/.test(right)) options.push([left, right])
+    }
+    return options.length === 1 ? options[0] : null
+}
+
+// One PPI per line: "A-B", "A B", "A<tab>B", "A,B" or "A;B". No header.
+export function parsePairs(text) {
+    const pairs = [], seen = new Set()
+    let duplicates = 0, selfPairs = 0
+    for (const [index, raw] of text.replace(/^\uFEFF/, '').split(/\r?\n/).entries()) {
+        const line = raw.trim()
+        if (!line) continue
+        const cells = /[\t,;\s]/.test(line)
+            ? line.split(/\s*[\t,;]\s*|\s+/).map(value => value.trim().replace(/^"(.*)"$/, '$1')).filter(value => value && value !== '-')
+            : splitHyphenPair(line)
+        if (!cells || cells.length !== 2) throw new Error(`Line ${index + 1} ("${line}"): write one PPI per line as A-B, or separate the two IDs with a tab, comma or space.`)
+        const [a, b] = cells
+        if (a.toUpperCase() === b.toUpperCase()) { selfPairs++; continue }
+        const key = [a.toUpperCase(), b.toUpperCase()].sort().join('\t')
+        if (seen.has(key)) { duplicates++; continue }
+        seen.add(key)
+        pairs.push([a, b])
+    }
+    if (!pairs.length) throw new Error('Paste or upload at least one PPI with two different proteins, e.g. TP53-MDM2.')
+    if (pairs.length > MAX_PAIRS) throw new Error(`Use up to ${MAX_PAIRS} distinct PPIs per search.`)
+    const proteins = new Set(pairs.flat())
+    if (proteins.size > MAX_PAIR_PROTEINS) throw new Error(`Your PPIs name ${proteins.size} distinct proteins; use up to ${MAX_PAIR_PROTEINS}.`)
+    return { pairs, duplicates, selfPairs, proteins: proteins.size }
+}
+
+// Requested PPIs with their evidence in the (filtered) network.
+export function queriedPairRows(rawGraph, graph) {
+    const nodes = new Map(rawGraph.nodes.map(node => [node.id, node]))
+    const edges = new Map(graph.edges.map(edge => [JSON.stringify([edge.source, edge.target].sort()), edge]))
+    return (rawGraph.queried_pairs || []).map((pair, index) => {
+        const edge = pair.source && pair.target ? edges.get(JSON.stringify([pair.source, pair.target].sort())) : null
+        // "filtered" marks a known pair whose evidence is hidden by the current filters.
+        const status = pair.status === 'known' && !edge ? 'filtered' : pair.status
+        return { ...pair, index, status, edge, sourceNode: nodes.get(pair.source), targetNode: nodes.get(pair.target) }
+    })
 }
 
 export function filterGraph(graph, filters) {

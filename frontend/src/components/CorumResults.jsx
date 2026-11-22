@@ -1,4 +1,5 @@
 import DBTable from './DBTable'
+import UniProtProtein from './UniProtProtein'
 import MetadataCard from './MetaDataCard'
 import DatabaseResultCard from './DatabaseResultCard'
 
@@ -15,7 +16,7 @@ const CorumResults = ({ data }) => {
 
     const rows = Interactions.map((i) => (
         <>
-            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}</td>
+            <td className="px-4 py-3 font-semibold text-indigo-700">{i.Interactor_A}<UniProtProtein accession={i.Interactor_A} /></td>
             <td className="px-4 py-3 text-gray-700">{i.Interactor_Gene_Name || '-'}</td>
             <td className="px-4 py-3 text-gray-500 italic">{i.Organism}</td>
             <td className="px-4 py-3">

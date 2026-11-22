@@ -1,10 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import './App.css'
 import Navbar from './components/Navbar'
 import SearchSection from './components/SearchSection'
 import './collection/collection.css'
 import './pages/pages.css'
-import { navigate, usePath } from './lib/routing'
+import { navigate, resultPath, usePath } from './lib/routing'
 import Link from './components/Link'
 import { GITHUB_URL } from './lib/site'
 const CollectionSearch = lazy(() => import('./components/CollectionSearch'))
@@ -95,18 +95,22 @@ const NoResults = ({ dbName, reason }) => (
 
 function App() {
     const path = usePath()
-    const resultMatch = path.match(/^\/results\/([^/]+)\/?$/)
-    const resultJobId = resultMatch ? decodeURIComponent(resultMatch[1]) : null
+    const resultMatch = path.match(/^\/(results|ppi-results)\/([^/]+)\/?$/)
+    const resultJobId = resultMatch ? decodeURIComponent(resultMatch[2]) : null
+    const resultTab = resultMatch?.[1] === 'ppi-results' ? 'ppi' : 'collection'
     const isHome = path === '/' || Boolean(resultJobId)
     const Page = PAGES[path.replace(/\/+$/, '')]
     const [results, setresults] = useState(null)
-    const [searchTab, setSearchTab] = useState(resultJobId ? 'collection' : 'single')
-    const [collectionOpened, setCollectionOpened] = useState(Boolean(resultJobId))
-    const [shownJobId, setShownJobId] = useState(resultJobId)
-    // Opening a /results/<id> link switches to the collection tab.
-    if (resultJobId !== shownJobId) {
-        setShownJobId(resultJobId)
-        if (resultJobId) { setSearchTab('collection'); setCollectionOpened(true) }
+    const [searchTab, setSearchTab] = useState(resultJobId ? resultTab : 'single')
+    const [opened, setOpened] = useState({ collection: resultJobId && resultTab === 'collection', ppi: resultJobId && resultTab === 'ppi' })
+    const [shownResult, setShownResult] = useState(resultMatch?.[0] || null)
+    // A tab replaces the URL when it hands a shared link to the other search type.
+    const changeJob = useCallback((jobId, type, fromTab) => navigate(resultPath(jobId, type), { replace: type !== fromTab }), [])
+    const openTab = tab => { setSearchTab(tab); if (tab !== 'single') setOpened(current => ({ ...current, [tab]: true })) }
+    // Opening a /results/<id> (batch) or /ppi-results/<id> link switches to that tab.
+    if ((resultMatch?.[0] || null) !== shownResult) {
+        setShownResult(resultMatch?.[0] || null)
+        if (resultJobId) openTab(resultTab)
     }
 
     useEffect(() => {
@@ -141,11 +145,15 @@ function App() {
             </main>}
             <main className="app-main flex-1" hidden={!isHome}>
                 <div className="search-tabs" role="tablist" aria-label="Search workflows">
-                    <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => setSearchTab('single')}>Single searches</button>
-                    <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => { setSearchTab('collection'); setCollectionOpened(true) }}>Collection search</button>
+                    <button id="single-search-tab" role="tab" aria-selected={searchTab === 'single'} aria-controls="single-search-panel" onClick={() => openTab('single')}>Single entry search</button>
+                    <button id="collection-search-tab" role="tab" aria-selected={searchTab === 'collection'} aria-controls="collection-search-panel" onClick={() => openTab('collection')}>Batch search</button>
+                    <button id="ppi-search-tab" role="tab" aria-selected={searchTab === 'ppi'} aria-controls="ppi-search-panel" onClick={() => openTab('ppi')}>PPI search</button>
                 </div>
                 <div id="collection-search-panel" role="tabpanel" aria-labelledby="collection-search-tab" hidden={searchTab !== 'collection'}>
-                    <Suspense fallback={<p className="collection-shell">Loading collection search…</p>}>{collectionOpened && <CollectionSearch initialJobId={resultJobId} onJobChange={jobId => navigate(`/results/${encodeURIComponent(jobId)}`)} />}</Suspense>
+                    <Suspense fallback={<p className="collection-shell">Loading batch search…</p>}>{opened.collection && <CollectionSearch searchType="batch" initialJobId={resultTab === 'collection' ? resultJobId : null} onJobChange={changeJob} />}</Suspense>
+                </div>
+                <div id="ppi-search-panel" role="tabpanel" aria-labelledby="ppi-search-tab" hidden={searchTab !== 'ppi'}>
+                    <Suspense fallback={<p className="collection-shell">Loading PPI search…</p>}>{opened.ppi && <CollectionSearch searchType="ppi" initialJobId={resultTab === 'ppi' ? resultJobId : null} onJobChange={changeJob} />}</Suspense>
                 </div>
                 <div id="single-search-panel" role="tabpanel" aria-labelledby="single-search-tab" hidden={searchTab !== 'single'}>
                 <SearchSection setresults={setresults} />
@@ -154,7 +162,7 @@ function App() {
                     <div className="app-results w-full mx-auto">
                         <InteractionOverlapLog results={results} />
 
-                        <InputSummary input={results[0].Input} />
+                        <InputSummary key={results[0].Input.UniProtId} input={results[0].Input} />
 
                         <DownloadPanel
                             results={results}
@@ -163,7 +171,7 @@ function App() {
                         />
 
                         {stringData && (stringStatus === 'valid'
-                            ? <StringResults data={stringData} />
+                            ? <StringResults data={stringData} taxId={results[0].Input.TaxonomyId} />
                             : <NoResults dbName="STRING" reason={stringStatus} />)}     
 
 

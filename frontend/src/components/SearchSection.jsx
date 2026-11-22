@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import SpeciesDownloadPanel from './SpeciesDownloadPanel'
 import Link from './Link'
-import { SINGLE_EXAMPLE } from '../lib/examples'
+import { SINGLE_EXAMPLE, singleExamplePath } from '../lib/examples'
+import { appPath } from '../lib/routing'
 
 const INPUT_TYPES = ['UniProtKB', 'GeneID', 'Ensembl', 'Gene_Name']
 
@@ -476,6 +477,17 @@ const SearchSection = ({setresults}) => {
 
     const loadExample = () => applyInputs(SINGLE_EXAMPLE)
 
+    // Single searches are not stored, so the example result is the example searched live.
+    // The URL becomes the shareable example link, so the result can be bookmarked or reloaded.
+    const viewExampleResult = () => {
+        applyInputs(SINGLE_EXAMPLE)
+        window.history.replaceState({}, '', appPath(singleExamplePath()))
+        performMainSearch(SINGLE_EXAMPLE.id, SINGLE_EXAMPLE.type, {
+            taxId: SINGLE_EXAMPLE.taxId, speciesName: SINGLE_EXAMPLE.species, databases: SINGLE_EXAMPLE.databases,
+            originalInput: SINGLE_EXAMPLE.id, originalType: SINGLE_EXAMPLE.type,
+        })
+    }
+
     // A shared link with run=1 starts its search once on page load.
     useEffect(() => {
         if (!urlInputs?.run || urlInputs.type === 'Gene_Name') return
@@ -573,8 +585,9 @@ const SearchSection = ({setresults}) => {
         
         <div className="flex flex-col gap-4">
     <div className="single-example-bar">
-        <button type="button" onClick={loadExample} className="single-example-button">Load example</button>
-        <span className="text-sm text-slate-600">Fills in human TP53 (UniProtKB P04637) and eight sources. <Link to="/help#single-results" className="underline">How to read the results</Link></span>
+        <button type="button" onClick={loadExample} disabled={loading} className="single-example-button">Load example</button>
+        <button type="button" onClick={viewExampleResult} disabled={loading} className="single-example-button secondary">View example result</button>
+        <span className="text-sm text-slate-600"><em>Load example</em> fills in human TP53 (UniProtKB P04637) and eight sources; <em>View example result</em> also runs the search. <Link to="/help#single-results" className="underline">How to read the results</Link></span>
     </div>
     <label className='font-bold text-left'>Search Type</label>
         <select

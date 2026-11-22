@@ -1,4 +1,4 @@
-import React from 'react'
+import UniProtProtein from './UniProtProtein'
 
 const InputSummary = ({input}) => {
   return (
@@ -7,6 +7,7 @@ const InputSummary = ({input}) => {
       <p>
         <strong>Protein:</strong> {input.UniProtId}
       </p>
+      <UniProtProtein accession={input.UniProtId} defaultOpen />
       {input.SpeciesName && (
       <p>
         <strong>Species:</strong> {input.SpeciesName}

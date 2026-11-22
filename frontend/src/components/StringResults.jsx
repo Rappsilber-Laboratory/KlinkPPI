@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import DatabaseResultCard from './DatabaseResultCard'
+import UniProtProtein from './UniProtProtein'
 
 const scoreInfo = [
     {label:'combined_score',info: "Overall confidence score combining all evidence channels"},
@@ -34,7 +35,8 @@ const InfoButton = ({ column }) => {
     )
 }
 
-const InteractorTable = ({ interactions, type }) => (
+// STRING reports preferred gene names, so UniProt lookups use the gene within the species.
+const InteractorTable = ({ interactions, type, taxId }) => (
         <div className="overflow-x-auto  border border-gray-200">
             <table className="w-full text-sm text-left">
                 <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wide">
@@ -70,8 +72,8 @@ const InteractorTable = ({ interactions, type }) => (
                     {interactions.map((interaction, index) => (
                         <tr key={index} className="hover:bg-indigo-50 transition">
                             <td className="px-4 py-3 text-gray-400 font-medium">{index + 1}</td>
-                            <td className="px-4 py-3 font-semibold text-indigo-700">{interaction.Interactor_A}</td>
-                            {type === 'indirect' && <td className="px-4 py-3 font-semibold text-indigo-700">{interaction.Interactor_B}</td>}
+                            <td className="px-4 py-3 font-semibold text-indigo-700">{interaction.Interactor_A}<UniProtProtein gene={interaction.Interactor_A} taxId={taxId} /></td>
+                            {type === 'indirect' && <td className="px-4 py-3 font-semibold text-indigo-700">{interaction.Interactor_B}<UniProtProtein gene={interaction.Interactor_B} taxId={taxId} /></td>}
                             <td className="px-4 py-3 text-gray-500 italic">{interaction.Organism}</td>
                             <td className="px-4 py-3">
                                 <span className={`font-bold ${interaction.combined_score >= 0.9 ? 'text-green-600' : interaction.combined_score >= 0.7 ? 'text-yellow-600' : 'text-gray-600'}`}>
@@ -97,7 +99,7 @@ const InteractorTable = ({ interactions, type }) => (
         </div>
 )
 
-const StringResults = ({ data }) => {
+const StringResults = ({ data, taxId }) => {
     const info = data.String[0].info
     const DirectInteractions = data.String[1].Direct_Interactions
     const IndirectInteractions = data.String[2].Indirect_Interactions
@@ -119,7 +121,7 @@ const StringResults = ({ data }) => {
                         </span>
                     </h3>
                     {DirectInteractions.length > 0 ? (
-                        <InteractorTable
+                        <InteractorTable taxId={taxId}
                             interactions={DirectInteractions}
                             type="direct"
                             />
@@ -143,7 +145,7 @@ const StringResults = ({ data }) => {
                     </button>
                     {showIndirect && (
                         IndirectInteractions.length > 0 ? (
-                    <InteractorTable
+                    <InteractorTable taxId={taxId}
                         interactions={IndirectInteractions}
                         type="indirect"
                     />

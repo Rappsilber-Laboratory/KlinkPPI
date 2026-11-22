@@ -99,6 +99,16 @@ class PersistenceTests(StoreTestCase):
         cs.rerun_job(cs.EXAMPLE_JOB_ID, internal=True)
         self.assertEqual(self.store.purge("collection", time() + 10**9), 0)
 
+    @patch.object(cs.POOL, "submit")
+    def test_ppi_example_is_built_from_example_pairs(self, submit):
+        with patch.object(cs, "snapshot", return_value={"status": "completed"}):
+            cs.ensure_example(Mock(), "Homo sapiens", databases=["IntAct"], search_type="ppi")
+        job = cs.JOBS[cs.PPI_EXAMPLE_JOB_ID]
+        self.assertTrue(job["pinned"])
+        self.assertEqual(job["search_type"], "ppi")
+        self.assertEqual(job["pairs"], cs.PPI_EXAMPLE_PAIRS)
+        self.assertNotIn(cs.EXAMPLE_JOB_ID, cs.JOBS)
+
     def test_example_choices_prefer_reviewed(self):
         rows = [{"input": "A", "candidates": [{"id": "X", "reviewed": False}, {"id": "Y", "reviewed": True}]},
                 {"input": "B", "candidates": [{"id": "Z", "reviewed": True}]}]

@@ -10,7 +10,7 @@ The operator prepares the server once.
    npm run build        # writes frontend/dist
    ```
 
-2. Prepare all server-side data and the tutorial example result:
+2. Prepare all server-side data and the tutorial example results (batch and PPI):
 
    ```bash
    .venv/bin/python scripts/prepare_server.py --models
@@ -58,6 +58,9 @@ container runs as UID 1000; if the host folder belongs to another user, build wi
 | `KLINKPPI_MAX_ACTIVE_COLLECTION_JOBS` | `8` | Collection analyses resolving/running at once |
 | `KLINKPPI_MAX_ACTIVE_COLLECTION_JOBS_PER_CLIENT` | `3` | Running analyses per client address |
 | `KLINKPPI_COLLECTION_WORKERS` | `2` | Parallel collection analyses (others wait in the queue) |
+| `KLINKPPI_COLLECTION_DB_WORKERS` | `24` | Parallel database queries within one batch/PPI analysis |
+| `KLINKPPI_COLLECTION_DB_CONCURRENCY` | `6` | Maximum simultaneous requests to any one source database, across all analyses |
+| `KLINKPPI_UNIPROT_WORKERS` | `4` | Parallel UniProt ID-lookup batches (25 IDs each) |
 | `KLINKPPI_EMBEDDING_MODELS` | all 12 | Comma-separated allowlist (e.g. smaller models on CPU-only hosts) |
 | `KLINKPPI_EMBEDDING_WORKERS` | `1` | Concurrent model inferences (keep 1 per GPU) |
 | `KLINKPPI_MAX_QUEUED_EMBEDDINGS` | `16` | Queued + running embedding comparisons |
@@ -66,7 +69,7 @@ container runs as UID 1000; if the host folder belongs to another user, build wi
 | `KLINKPPI_MAX_ACTIVE_ALIGNMENTS` | `64` | Queued + running pairwise alignments |
 | `KLINKPPI_RATE_LIMITS` | `on` | `off` disables per-client rate limits |
 | `KLINKPPI_RATE_LIMIT_SCALE` | `1` | Multiplies every rate limit |
-| `KLINKPPI_BUILD_EXAMPLE` | `1` | Build the tutorial example on startup when missing |
+| `KLINKPPI_BUILD_EXAMPLE` | `1` | Build the tutorial examples (batch `/results/example`, PPI `/ppi-results/ppi-example`) on startup when missing |
 | `KLINKPPI_ALLOWED_ORIGINS` | – | Extra CORS origins (not needed when served from one host) |
 
 Client addresses are used only in memory for fair-use limits; they are never written

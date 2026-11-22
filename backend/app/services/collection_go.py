@@ -49,8 +49,9 @@ def protein_go(accession, tax_id, cache_hour):
 
 
 def validate_unknown_pair(job, source, target):
-    if job["status"] != "completed" or job["mode"] != "induced":
-        raise ValueError("Pair comparison requires a completed induced network.")
+    # PPI searches compare their requested pairs in either network mode.
+    if job["status"] != "completed" or (job["mode"] != "induced" and not job.get("pairs")):
+        raise ValueError("Pair comparison requires a completed induced network or PPI search.")
     graph = job["graph"]
     nodes = {node["id"]: node for node in graph["nodes"] if node.get("input") and not node.get("unresolved")}
     if source == target or source not in nodes or target not in nodes:

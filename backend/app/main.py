@@ -6,6 +6,7 @@ import threading
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from time import time
 from typing import List, Literal, Optional
 from fastapi import FastAPI,HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -26,7 +27,7 @@ from app.services.species_index import get_species_by_tax_id, get_supported_data
 from app.services.species_ppi_export import build_species_mitab, build_species_parquet
 from app.services.species_ppi_jobs import cancel_species_ppi_job, create_species_ppi_job, get_species_display_name, get_species_ppi_job, get_species_ppi_job_rows
 from app.services.uniprot_gene_search import search_gene_name_candidates
-from app.services.uniprot_lookup import get_uniprot_taxonomy_id
+from app.services.uniprot_lookup import ProteinLookupError, get_uniprot_taxonomy_id, protein_function
 import pandas as pd
 
 from app.services.select_columns_mitab import build_final_columns
@@ -34,7 +35,7 @@ from app.services.populate_mitab import DBs,populate_huri
 from app.services.toParquet import flatten_results
 
 from pydantic import BaseModel,EmailStr,Field
-from app.services import collection_search, collection_go, collection_alignment, collection_analysis, collection_embeddings
+from app.services import collection_search, collection_go, collection_alignment, collection_analysis, collection_embeddings, collection_mitab
 from app.services.job_store import get_store, retention_seconds
 from app.services.rate_limit import RateLimiter
 
@@ -66,16 +67,18 @@ def _flag(name, default="1"):
 
 
 def _start_example_build():
-    """Build the permanent tutorial example in the background (needs internet)."""
+    """Build the permanent batch and PPI tutorial examples in the background (needs internet)."""
     def build():
-        try:
-            species = get_species_by_tax_id("9606")
-            available = set(get_supported_databases("9606"))
-            databases = [db for db in collection_search.EXAMPLE_DATABASES if db in available]
-            job = collection_search.ensure_example(resolve_collection_database, species["display_name"], databases=databases)
-            LOGGER.info("Example collection result: %s", job.get("status"))
-        except Exception:
-            LOGGER.exception("Could not build the example collection result")
+        species = get_species_by_tax_id("9606")
+        available = set(get_supported_databases("9606"))
+        databases = [db for db in collection_search.EXAMPLE_DATABASES if db in available]
+        for search_type in ("batch", "ppi"):
+            try:
+                job = collection_search.ensure_example(resolve_collection_database, species["display_name"],
+                                                       databases=databases, search_type=search_type)
+                LOGGER.info("Example %s result: %s", search_type, job.get("status"))
+            except Exception:
+                LOGGER.exception("Could not build the example %s result", search_type)
     threading.Thread(target=build, name="klinkppi-example", daemon=True).start()
 
 
@@ -208,8 +211,10 @@ def data_readiness():
     except Exception:
         embeddings = False
     example = get_store().load("collection", collection_search.EXAMPLE_JOB_ID)
+    ppi_example = get_store().load("collection", collection_search.PPI_EXAMPLE_JOB_ID)
     return {"local_sources": sources, "embedding_backend": embeddings,
-            "example_result": example.get("status") if example else "missing"}
+            "example_result": example.get("status") if example else "missing",
+            "ppi_example_result": ppi_example.get("status") if ppi_example else "missing"}
 
 
 @app.get("/health")
@@ -217,7 +222,8 @@ def health(details: bool = False):
     if not details:
         return {"status": "ok"}
     readiness = data_readiness()
-    ready = all(readiness["local_sources"].values()) and readiness["embedding_backend"] and readiness["example_result"] == "completed"
+    ready = (all(readiness["local_sources"].values()) and readiness["embedding_backend"]
+             and readiness["example_result"] == "completed" and readiness["ppi_example_result"] == "completed")
     return {"status": "ok" if ready else "degraded", "version": APP_VERSION, **readiness}
 
 
@@ -228,6 +234,10 @@ def service_limits():
         "version": APP_VERSION,
         "collection_max_identifiers": collection_search.MAX_INPUTS,
         "collection_max_edges": collection_search.MAX_EDGES,
+        "ppi_max_pairs": collection_search.MAX_PAIRS,
+        "ppi_max_proteins": collection_search.MAX_PAIR_INPUTS,
+        "default_neighbor_limit": collection_search.DEFAULT_NEIGHBOR_LIMIT,
+        "max_neighbor_limit": collection_search.MAX_NEIGHBOR_LIMIT,
         "result_retention_days": round(retention_seconds() / 86400, 2),
         "max_active_collection_jobs": collection_search.MAX_ACTIVE_JOBS,
         "max_active_collection_jobs_per_client": collection_search.MAX_ACTIVE_PER_CLIENT,
@@ -238,6 +248,7 @@ def service_limits():
         "rate_limits_enabled": RATE_LIMITER.enabled,
         "rate_limits": RATE_LIMITER.describe(),
         "example_job_id": collection_search.EXAMPLE_JOB_ID,
+        "ppi_example_job_id": collection_search.PPI_EXAMPLE_JOB_ID,
     }
 
 
@@ -295,6 +306,27 @@ def gene_name_search(
         "species_name": resolved_species["display_name"] if resolved_species else requested_species_name,
         "candidates": candidates,
     }
+
+
+UNIPROT_ACCESSION = re.compile(r"(?:[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2})(?:-\d+)?", re.I)
+GENE_SYMBOL = re.compile(r"[A-Za-z0-9_.:/()-]{1,60}")
+
+
+@app.get("/uniprot/function")
+def uniprot_function(accession: str = "", gene: str = "", tax_id: str = ""):
+    """UniProt protein name and FUNCTION text, by accession or by gene name within a species."""
+    accession, gene, tax_id = accession.strip(), gene.strip(), tax_id.strip()
+    if accession:
+        if not UNIPROT_ACCESSION.fullmatch(accession):
+            raise HTTPException(status_code=400, detail="Provide a valid UniProtKB accession")
+        accession = re.sub(r"-\d+$", "", accession.upper())
+        gene = tax_id = ""
+    elif not (GENE_SYMBOL.fullmatch(gene) and tax_id.isdigit()):
+        raise HTTPException(status_code=400, detail="Provide a UniProtKB accession, or a gene name and taxonomy ID")
+    try:
+        return protein_function(accession or None, gene or None, tax_id or None, int(time() // 3600))
+    except ProteinLookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.post("/species-ppi/jobs")
@@ -566,6 +598,32 @@ class CollectionRequest(BaseModel):
     selected_databases: list[str] = Field(min_length=1, max_length=12)
     input_type: Literal["auto", "UniProtKB", "Gene_Name", "Ensembl", "GeneID"] = "auto"
     mode: Literal["induced", "expanded"] = "induced"
+    neighbor_limit: Optional[int] = Field(default=None, ge=1, le=collection_search.MAX_NEIGHBOR_LIMIT,
+                                          description=f"Expanded mode: first neighbors shown per input protein (default {collection_search.DEFAULT_NEIGHBOR_LIMIT}).")
+
+
+class PPIRequest(BaseModel):
+    pairs: list[list[str]] = Field(min_length=1, description=f"Up to {collection_search.MAX_PAIRS} protein pairs, each [A, B], over at most {collection_search.MAX_PAIR_INPUTS} distinct identifiers.")
+    species_name: str = Field(min_length=1, max_length=200)
+    tax_id: Optional[str] = None
+    selected_databases: list[str] = Field(min_length=1, max_length=12)
+    input_type: Literal["auto", "UniProtKB", "Gene_Name", "Ensembl", "GeneID"] = "auto"
+    mode: Literal["induced", "expanded"] = "induced"
+    neighbor_limit: Optional[int] = Field(default=None, ge=1, le=collection_search.MAX_NEIGHBOR_LIMIT,
+                                          description=f"Expanded mode: first neighbors shown per protein or per PPI (default {collection_search.DEFAULT_NEIGHBOR_LIMIT}).")
+    neighbor_scope: Literal["protein", "pair"] = "protein"
+
+
+def validated_search_context(species_name, tax_id, selected_databases):
+    tax_id, _, species = resolve_species_context(tax_id, species_name)
+    if not tax_id or not species:
+        raise HTTPException(status_code=400, detail="Select a supported species before batch or PPI search")
+    supported = get_supported_databases(tax_id)
+    databases = list(dict.fromkeys(selected_databases))
+    invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Databases unavailable for this species: {', '.join(invalid)}")
+    return tax_id, species, databases
 
 
 class CollectionChoices(BaseModel):
@@ -574,24 +632,37 @@ class CollectionChoices(BaseModel):
 
 @app.post("/collection/jobs", status_code=202)
 def start_collection(request: CollectionRequest, http_request: Request = None):
-    tax_id, _, species = resolve_species_context(request.tax_id, request.species_name)
-    if not tax_id or not species:
-        raise HTTPException(status_code=400, detail="Select a supported species before collection search")
+    """Batch search: a network for a list of proteins."""
     limit = collection_search.MAX_INPUTS
     identifiers = list(dict.fromkeys(token.strip() for token in request.identifiers if token.strip()))
     if len(identifiers) > limit:
         raise HTTPException(status_code=400, detail=f"Use up to {limit} distinct identifiers per collection; duplicates are merged.")
     if not identifiers or any(len(token) > 100 for token in identifiers):
         raise HTTPException(status_code=400, detail=f"Provide 1–{limit} distinct identifiers, each at most 100 characters")
-    supported = get_supported_databases(tax_id)
-    databases = list(dict.fromkeys(request.selected_databases))
-    invalid = [db for db in databases if db not in supported or (db not in DATABASE_RESOLVERS and db != "HuRI")]
-    if invalid:
-        raise HTTPException(status_code=400, detail=f"Databases unavailable for this species: {', '.join(invalid)}")
+    tax_id, species, databases = validated_search_context(request.species_name, request.tax_id, request.selected_databases)
     try:
         return collection_search.create_job(identifiers, tax_id, species["display_name"], databases,
                                             request.input_type, request.mode, resolve_collection_database,
-                                            client=client_id(http_request))
+                                            client=client_id(http_request), neighbor_limit=request.neighbor_limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc))
+
+
+@app.post("/collection/ppi-jobs", status_code=202)
+def start_ppi_search(request: PPIRequest, http_request: Request = None):
+    """PPI search: look up specific protein pairs; results use the collection job endpoints."""
+    if any(len(pair) != 2 or any(not token.strip() or len(token.strip()) > 100 for token in pair) for pair in request.pairs):
+        raise HTTPException(status_code=400, detail="Each PPI needs exactly two identifiers, each at most 100 characters")
+    try:
+        pairs, _ = collection_search.normalize_pairs(request.pairs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    tax_id, species, databases = validated_search_context(request.species_name, request.tax_id, request.selected_databases)
+    try:
+        return collection_search.create_job([], tax_id, species["display_name"], databases,
+                                            request.input_type, request.mode, resolve_collection_database,
+                                            client=client_id(http_request), pairs=pairs,
+                                            neighbor_limit=request.neighbor_limit, neighbor_scope=request.neighbor_scope)
     except ValueError as exc:
         raise HTTPException(status_code=429, detail=str(exc))
 
@@ -654,6 +725,39 @@ def collection_network_analysis(
         return collection_analysis.analyze(job, selected, evidence_type, method, score_database, min_score, min_publications)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/collection/jobs/{job_id}/mitab")
+def collection_mitab_export(
+    job_id: str,
+    databases: Optional[List[str]] = Query(default=None),
+    evidence_type: Literal["all", "direct", "functional", "predicted"] = "all",
+    method: str = "",
+    score_database: str = "",
+    min_score: Optional[float] = Query(default=None, allow_inf_nan=False),
+    min_publications: int = Query(default=0, ge=0),
+    queried_pairs_only: bool = False,
+):
+    """PSI-MI TAB of the filtered network; one row per evidence record."""
+    selected = None if databases is None else [db for db in databases if db]
+    try:
+        job = collection_search.snapshot(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection job not found or expired")
+    try:
+        graph, _ = collection_analysis.filter_graph(job, selected, evidence_type, method, score_database, min_score, min_publications)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    edge_ids = None
+    if queried_pairs_only:
+        if not job.get("pairs"):
+            raise HTTPException(status_code=400, detail="Only PPI searches have queried pairs")
+        edge_ids = {pair["edge"] for pair in job["graph"].get("queried_pairs", []) if pair.get("edge")}
+    text = collection_mitab.build_mitab(graph, job["tax_id"], job["species"], edge_ids)
+    kind = "ppi" if job.get("pairs") else "batch"
+    filename = f"klinkppi_{kind}_{'queried_pairs' if queried_pairs_only else job['mode']}_{job_id[:8]}.mitab.txt"
+    return Response(text, media_type="text/tab-separated-values; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @app.get("/collection/jobs/{job_id}/shared-go")

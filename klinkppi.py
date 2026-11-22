@@ -9,6 +9,7 @@ import csv
 import json
 import math
 import os
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -148,10 +149,73 @@ class KlinkPPIClient:
         return cls.normalize_identifiers(ids)
 
     def start_collection(self, identifiers, *, species_name: str, tax_id=None,
-                         databases: Iterable[str], input_type="auto", mode="induced"):
+                         databases: Iterable[str], input_type="auto", mode="induced", neighbor_limit=None):
+        """Batch search. ``neighbor_limit``: expanded mode only, first neighbors per input (server default 10)."""
         return self._request("POST", "/collection/jobs", json={
             "identifiers": self.normalize_identifiers(identifiers), "species_name": species_name,
-            "tax_id": tax_id, "selected_databases": list(databases), "input_type": input_type, "mode": mode})
+            "tax_id": tax_id, "selected_databases": list(databases), "input_type": input_type, "mode": mode,
+            "neighbor_limit": neighbor_limit})
+
+    @staticmethod
+    def _split_pair_line(line):
+        """Split "A-B", "A B", "A<tab>B", "A,B" or "A;B"; a hyphen only when one split is possible."""
+        if any(separator in line for separator in "\t,; "):
+            cells = [cell.strip().strip('"') for cell in re.split(r"[\t,;\s]+", line)]
+            return [cell for cell in cells if cell and cell != "-"]
+        options = [[line[:index], line[index + 1:]] for index, char in enumerate(line)
+                   if char == "-" and 0 < index < len(line) - 1 and not re.match(r"\d+(-|$)", line[index + 1:])]
+        return options[0] if len(options) == 1 else None
+
+    @classmethod
+    def normalize_pairs(cls, pairs):
+        """Merge A-B/B-A duplicates and drop self-pairs; at most 100 pairs over 100 proteins."""
+        result, seen = [], set()
+        for pair in pairs:
+            if isinstance(pair, str):
+                split = cls._split_pair_line(pair.strip())
+                if not split:
+                    raise ValueError(f"Cannot split {pair!r} into two identifiers; use a tab, comma or space.")
+                pair = split
+            pair = [str(value).strip() for value in pair]
+            if len(pair) != 2 or not all(pair) or any(len(value) > 100 for value in pair):
+                raise ValueError(f"Each PPI needs exactly two identifiers of at most 100 characters: {pair!r}")
+            key = tuple(sorted(value.upper() for value in pair))
+            if key[0] != key[1] and key not in seen:
+                seen.add(key)
+                result.append(pair)
+        if not 1 <= len(result) <= 100:
+            raise ValueError("Use 1–100 distinct PPIs per search; duplicates and self-pairs are dropped.")
+        if len({value for pair in result for value in pair}) > 100:
+            raise ValueError("PPIs may name at most 100 distinct proteins.")
+        return result
+
+    @classmethod
+    def read_pairs(cls, path: str | Path):
+        """Read a headerless PPI file (UTF-8): one pair per line, as A-B or two separated IDs."""
+        lines = [line.strip() for line in Path(path).read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+        return cls.normalize_pairs(lines)
+
+    def start_ppi(self, pairs, *, species_name: str, tax_id=None, databases: Iterable[str], input_type="auto",
+                  mode="induced", neighbor_limit=None, neighbor_scope="protein"):
+        """PPI search for specific pairs; follow it with the collection job methods (get/run/wait/analysis)."""
+        return self._request("POST", "/collection/ppi-jobs", json={
+            "pairs": self.normalize_pairs(pairs), "species_name": species_name, "tax_id": tax_id,
+            "selected_databases": list(databases), "input_type": input_type, "mode": mode,
+            "neighbor_limit": neighbor_limit, "neighbor_scope": neighbor_scope})
+
+    def ppi_search(self, pairs, *, species_name: str, tax_id=None, databases: Iterable[str], input_type="auto",
+                   mode="induced", neighbor_limit=None, neighbor_scope="protein", choices=None,
+                   poll_interval=1.0, max_wait=3600, on_progress=None):
+        """Convenience PPI workflow; ambiguous mappings raise with error.job for review/resume."""
+        self._validate_wait(poll_interval, max_wait)
+        job = self.start_ppi(pairs, species_name=species_name, tax_id=tax_id, databases=databases,
+                             input_type=input_type, mode=mode, neighbor_limit=neighbor_limit, neighbor_scope=neighbor_scope)
+        return self._review_and_run(job, choices, poll_interval, max_wait, on_progress)
+
+    @staticmethod
+    def queried_pairs(job):
+        """Requested pairs of a completed PPI search: inputs, accessions, status and edge ID."""
+        return (job.get("graph") or {}).get("queried_pairs", [])
 
     def get_collection(self, job_id):
         return self._request("GET", self._job_path("collection", job_id))
@@ -168,12 +232,15 @@ class KlinkPPIClient:
         return self._request("POST", self._job_path("collection", job_id) + "/cancel")
 
     def collection_search(self, identifiers, *, species_name: str, tax_id=None, databases: Iterable[str],
-                          input_type="auto", mode="induced", choices=None, poll_interval=1.0,
+                          input_type="auto", mode="induced", neighbor_limit=None, choices=None, poll_interval=1.0,
                           max_wait=3600, on_progress=None):
         """Convenience workflow; ambiguous mappings raise with error.job for review/resume."""
         self._validate_wait(poll_interval, max_wait)
         job = self.start_collection(identifiers, species_name=species_name, tax_id=tax_id,
-                                   databases=databases, input_type=input_type, mode=mode)
+                                   databases=databases, input_type=input_type, mode=mode, neighbor_limit=neighbor_limit)
+        return self._review_and_run(job, choices, poll_interval, max_wait, on_progress)
+
+    def _review_and_run(self, job, choices, poll_interval, max_wait, on_progress):
         job = self.wait_collection(job, poll_interval=poll_interval, max_wait=max_wait,
                                    on_progress=on_progress, until_review=True)
         ambiguous = [row["input"] for row in job["resolution"]
@@ -232,6 +299,21 @@ class KlinkPPIClient:
             params["databases"] = list(databases) or [""]
         return self._request("GET", self._job_path("collection", job_id) + "/analysis", params=params)
 
+    def download_collection_mitab(self, job_id, path, *, queried_pairs_only=False, databases=None, evidence_type="all",
+                                  method="", score_database="", min_score=None, min_publications=0):
+        """PSI-MI TAB of a batch/PPI network with the same filters as collection_analysis."""
+        params = {"evidence_type": evidence_type, "method": method, "score_database": score_database,
+                  "min_score": min_score, "min_publications": min_publications,
+                  "queried_pairs_only": "true" if queried_pairs_only else "false"}
+        if databases is not None:
+            params["databases"] = list(databases) or [""]
+        return self._download(self._job_path("collection", job_id) + "/mitab", path, method="GET", params=params)
+
+    def protein_function(self, accession=None, *, gene=None, tax_id=None):
+        """UniProt protein name and Function section (with PubMed IDs), by accession or gene + tax_id."""
+        params = {"accession": accession} if accession else {"gene": gene, "tax_id": tax_id}
+        return self._request("GET", "/uniprot/function", params=params)
+
     def shared_go(self, job_id, source, target):
         return self._request("GET", self._job_path("collection", job_id) + "/shared-go",
                              params={"source": source, "target": target})
@@ -280,11 +362,11 @@ class KlinkPPIClient:
         task = self.start_alignment(job_id, source, target)
         return self.wait_alignment(job_id, task, poll_interval=poll_interval, max_wait=max_wait, on_progress=on_progress)
 
-    def _download(self, endpoint, path, payload):
+    def _download(self, endpoint, path, payload=None, *, method="POST", params=None):
         """Stream to an adjacent temporary file; replace destination only on success."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        response = self._send("POST", endpoint, json=payload, stream=True)
+        response = self._send(method, endpoint, json=payload, params=params, stream=True)
         temporary = None
         try:
             self._check(response)

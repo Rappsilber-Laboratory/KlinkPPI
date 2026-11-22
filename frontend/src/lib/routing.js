@@ -32,7 +32,7 @@ export function usePath() {
     return path
 }
 
-export const DEFAULT_LIMITS = { collection_max_identifiers: 50, result_retention_days: 14, max_active_collection_jobs_per_client: 3, max_models_per_embedding: 3, example_job_id: 'example' }
+export const DEFAULT_LIMITS = { collection_max_identifiers: 50, ppi_max_pairs: 100, ppi_max_proteins: 100, default_neighbor_limit: 10, max_neighbor_limit: 200, result_retention_days: 14, max_active_collection_jobs_per_client: 3, max_models_per_embedding: 3, example_job_id: 'example', ppi_example_job_id: 'ppi-example' }
 let limitsPromise = null
 
 export function useLimits() {
@@ -46,4 +46,6 @@ export function useLimits() {
     return limits
 }
 
-export const resultUrl = jobId => `${window.location.origin}${appPath(`/results/${encodeURIComponent(jobId)}`)}`
+// Batch results live at /results/<id>; PPI search results at /ppi-results/<id>.
+export const resultPath = (jobId, searchType = 'batch') => `/${searchType === 'ppi' ? 'ppi-results' : 'results'}/${encodeURIComponent(jobId)}`
+export const resultUrl = (jobId, searchType) => `${window.location.origin}${appPath(resultPath(jobId, searchType))}`

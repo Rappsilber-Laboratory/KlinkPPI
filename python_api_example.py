@@ -11,6 +11,7 @@ WORKFLOWS = {
     "species": "species_lookup", "gene": "gene_lookup", "single": "single_search",
     "complete-species": "complete_species_search", "collection": "collection_search",
     "followups": "collection_followups", "embedding": "collection_embeddings",
+    "ppi": "ppi_search", "function": "protein_function",
 }
 
 
@@ -24,7 +25,7 @@ def main(argv=None):
     module = import_module(f"api_examples.{WORKFLOWS[args.workflow]}")
     from klinkppi import KlinkPPIError
     try:
-        if args.workflow in {"gene", "complete-species", "collection", "followups", "embedding"}:
+        if args.workflow in {"gene", "complete-species", "collection", "followups", "embedding", "ppi", "function"}:
             module.main(remaining)
         else:
             if remaining:

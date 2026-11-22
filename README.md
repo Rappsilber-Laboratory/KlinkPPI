@@ -19,7 +19,7 @@ KlinkPPI is a web application for exploring protein-protein interaction (PPI) da
 
 ## Features
 
-- Single and collection searches
+- Single entry, batch (protein list) and PPI (protein pair) searches
 - Search by `UniProtKB`, `GeneID`, `Ensembl`, or `Gene Name`
 - Filter queries by taxonomy ID
 - Query one database or several at once
@@ -251,12 +251,18 @@ interpret every result), **Web services & Python API** (`/web-services`, every e
 with description and URL), **License** (`/license`) and **Privacy** (`/privacy`) pages.
 It sets no cookies and loads no third-party resources (the Inter font is self-hosted).
 
-- Single search: **Load example** fills in human TP53. Searches can also be linked,
-  e.g. `/?id=P04637&type=UniProtKB&tax=9606&db=String&db=IntAct&run=1`.
-- Collection search: every job gets a private, bookmarkable link `/results/<job_id>`
+- Single entry search: **Load example** fills in human TP53; **View example result**
+  also runs it and sets the shareable example link. Searches can also be linked,
+  e.g. `/?id=P04637&type=UniProtKB&tax=9606&db=String&db=IntAct&run=1`. The searched
+  protein's UniProt function is shown under the search summary.
+- Batch search: every job gets a private, bookmarkable link `/results/<job_id>`
   as soon as it is submitted. The page shows queued/running/finished status, keeps
   working after the browser is closed, and stays available for 14 days
   (`KLINKPPI_RESULT_RETENTION_DAYS`). The read-only example result is at `/results/example`.
+- PPI search: the same, at `/ppi-results/<job_id>`; the read-only example result is at
+  `/ppi-results/ppi-example`.
+- The Tutorial walks through all three searches with the example results; Help
+  documents PPI input, pair statuses, neighbor limits, MITAB and UniProt function.
 - Template script: `GET /downloads/klinkppi_template.py` returns `klinkppi_template.py`
   with the server's API URL filled in; it is linked on the home page.
 - `GET /limits` reports input limits, retention, queue and fair-use limits;
@@ -266,9 +272,9 @@ See [deploy/README.md](deploy/README.md) for production deployment (HTTPS revers
 proxy, `npm run build`, `scripts/prepare_server.py`, `npm run serve`) and all
 configuration variables, including rate limits and the embedding queue.
 
-## Collection searches
+## Batch searches (collections)
 
-Open **Collection search** beside **Single searches**. Choose a supported species from
+Open **Batch search** beside **Single entry search**. Choose a supported species from
 its suggestions, paste a list or upload a CSV/TSV/TXT file, and select the source
 databases and network mode. Files contain one identifier per line, without a header
 or extra columns. Collections support up to 50 distinct identifiers; duplicate rows
@@ -281,6 +287,56 @@ The input is labeled **Gene / protein list (up to 50 entries)**. The 50 distinct
 identifier limit applies to pasted lists, uploaded CSV/TSV/TXT files, and
 `POST /collection/jobs` API requests after trimming and duplicate merging.
 Over-limit requests return a clear error before a job starts.
+
+In the **Expanded network** mode, choose how many first neighbors to show per input
+protein (default 10, up to 200; `neighbor_limit` in the API). Neighbors are ranked by
+supporting databases, then publications, then evidence records; lower-ranked
+neighbors are hidden. Induced networks are unchanged.
+
+Batch and PPI results download as PSI-MI TAB (**MITAB** button, or
+`GET /collection/jobs/{job_id}/mitab` with the same filter parameters as
+`/analysis`), one row per evidence record of the filtered network.
+
+## PPI searches
+
+Open **PPI search** to check specific protein pairs. **Load example** fills in seven
+human pairs (`frontend/public/examples/ppi_example.txt`), and **View example result**
+opens the permanent, read-only PPI example at `/ppi-results/ppi-example`: five known
+pairs (BRCA1–BARD1, PALB2–BRCA2, RAD51–RAD51C, FANCD2–FANCI, TP53–MDM2) and two
+without evidence (RAD51C–DMC1, BARD1–XRCC3). It is built at startup together with the
+batch example (`scripts/prepare_server.py` builds both; `--rebuild-example` rebuilds
+them). Write one pair per line
+(`TP53-MDM2`, or two IDs separated by a tab, comma, semicolon or space; use a separator
+when an ID contains a hyphen), or upload a file in the same format. Up to 100 pairs
+over 100 distinct proteins; `A-B` and `B-A` are merged. IDs are reviewed as in batch
+search. Results list every requested pair as known (with its sources, evidence and
+publications), without evidence, or unresolved. Pairs without evidence get the same
+follow-ups as batch search (shared GO terms, alignment, embeddings, BLAST). The expanded
+mode can limit neighbors per protein or per PPI (shared neighbors first). The
+**Download MITAB (requested pairs)** button exports only the requested pairs
+(`queried_pairs_only=true`). API: `POST /collection/ppi-jobs` with
+`{"pairs": [["TP53", "MDM2"]], "species_name": "Homo sapiens", "selected_databases": ["IntAct"]}`;
+then use the `/collection/jobs/{job_id}` endpoints. Result links are
+`/ppi-results/<job_id>`. Python: `python python_api_example.py ppi`, the
+`KlinkPPIClient.ppi_search` method, or `python klinkppi_template.py --steps ppi
+--pairs TP53-MDM2 BRCA1-BARD1` (see [api_examples/README.md](api_examples/README.md)).
+
+## UniProt links and protein function
+
+Proteins in every section link to their UniProt entry. **Show function** displays
+the entry's Function section (the first section of a UniProt entry page) with its
+PubMed citations, read from the UniProt JSON entry via
+`GET /uniprot/function?accession=P04637` (or `?gene=TP53&tax_id=9606` for STRING
+gene names). Lookups are cached for an hour.
+
+## Speed
+
+Database queries for batch and PPI searches run in parallel
+(`KLINKPPI_COLLECTION_DB_WORKERS`, default 24), with at most
+`KLINKPPI_COLLECTION_DB_CONCURRENCY` (default 6) simultaneous requests to any one
+source. UniProt ID batches are resolved in parallel (`KLINKPPI_UNIPROT_WORKERS`,
+default 4). Single entry searches query all databases in parallel and fetch IntAct
+result pages concurrently.
 
 Each protein in **Pairs with no interaction found** offers **Search BLASTP ↗**,
 **Copy FASTA**, and **Find similar structures ↗**. Sequences are fetched on demand

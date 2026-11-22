@@ -16,6 +16,7 @@ def main(argv=None):
     parser.add_argument("--tax-id", default="9606")
     parser.add_argument("--species-name", default="Homo sapiens")
     parser.add_argument("--mode", choices=["induced", "expanded"], default="induced")
+    parser.add_argument("--neighbor-limit", type=int, help="Expanded mode: first neighbors shown per input protein (server default 10)")
     parser.add_argument("--input-type", choices=["auto", "UniProtKB", "Gene_Name", "Ensembl", "GeneID"], default="auto")
     parser.add_argument("--databases", nargs="+", default=["String", "IntAct", "BioGrid"])
     parser.add_argument("--job-id", help="Resume/review an existing job")
@@ -38,7 +39,8 @@ def main(argv=None):
             # Duplicate rows merge before the 50 distinct ID limit, as in the UI.
             # Species name should match --tax-id when using another organism.
             job = api.start_collection(ids, species_name=args.species_name, tax_id=args.tax_id,
-                                       databases=args.databases, mode=args.mode, input_type=args.input_type)
+                                       databases=args.databases, mode=args.mode, input_type=args.input_type,
+                                       neighbor_limit=args.neighbor_limit)
         api.export_json(job, OUTPUT_DIR / "collection_job_started.json")
         print("Resume with --job-id", job["job_id"])
         job = api.wait_collection(job, until_review=True, on_progress=progress)
@@ -64,8 +66,10 @@ def main(argv=None):
         print("Network:", analysis["statistics"]["nodes"], "nodes,", analysis["statistics"]["edges"], "edges")
         for format_name in ("json", "graphml", "sif", "cx"):
             api.export_network(analysis, OUTPUT_DIR / f"collection_network.{format_name}", format_name)
-        # Expanded mode includes validated first neighbors. Unknown pair tools
-        # operate on induced collections only; see collection_followups.py.
+        # PSI-MI TAB from the server, one row per evidence record (same filters as collection_analysis).
+        api.download_collection_mitab(job["job_id"], OUTPUT_DIR / "collection_network.mitab.txt")
+        # Expanded mode includes the top validated first neighbors (--neighbor-limit).
+        # Unknown pair tools operate on induced collections and PPI searches; see collection_followups.py.
 
 
 if __name__ == "__main__":
